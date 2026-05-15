@@ -44,8 +44,12 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
     implementation 'androidx.core:core-ktx:1.15.0'
 
-    // AUSBC: UVC USB camera library
-    implementation 'com.github.jiangdongguo.AndroidUSBCamera:libausbc:3.3.3'
+    // AUSBC: UVC USB camera library (3.3.3 fails to build on JitPack; 3.2.7 is the latest working version)
+    // immersionbar and webpdecoder are spurious transitive POM entries not used by libausbc source
+    implementation('com.github.jiangdongguo.AndroidUSBCamera:libausbc:3.2.7') {
+        exclude group: 'com.gyf.immersionbar', module: 'immersionbar'
+        exclude group: 'com.zlc.glide',        module: 'webpdecoder'
+    }
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'

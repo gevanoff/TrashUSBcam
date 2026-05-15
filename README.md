@@ -37,4 +37,6 @@ The resulting APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Library
 
-This project uses [jiangdongguo/AndroidUSBCamera](https://github.com/jiangdongguo/AndroidUSBCamera) (AUSBC v3.3.3), licensed under the Apache 2.0 License.
+This project uses [jiangdongguo/AndroidUSBCamera](https://github.com/jiangdongguo/AndroidUSBCamera) (AUSBC v3.2.7), licensed under the Apache 2.0 License.
+
+> **Note:** v3.3.x releases have a broken JitPack build due to NDK toolchain issues; v3.2.7 is the latest version with a successful JitPack build.

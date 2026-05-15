@@ -5,10 +5,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import com.gevanoff.trashcam.databinding.FragmentCameraBinding
-import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.base.CameraFragment
-import com.jiangdg.ausbc.callback.ICameraStateCallBack
-import com.jiangdg.ausbc.camera.bean.CameraRequest
+import com.jiangdg.ausbc.camera.bean.CameraStatus
+import com.jiangdg.ausbc.utils.bus.BusKey
+import com.jiangdg.ausbc.utils.bus.EventBus
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
 import com.jiangdg.ausbc.widget.IAspectRatio
 
@@ -22,7 +22,7 @@ class UsbCameraFragment : CameraFragment() {
 
     private var binding: FragmentCameraBinding? = null
 
-    // --- CameraFragment contract ---
+    // --- BaseFragment contract ---
 
     override fun getRootView(inflater: LayoutInflater, container: ViewGroup?): View? {
         if (binding == null) {
@@ -30,6 +30,8 @@ class UsbCameraFragment : CameraFragment() {
         }
         return binding?.root
     }
+
+    // --- CameraFragment contract ---
 
     /** Camera preview surface – created programmatically so the library can manage it. */
     override fun getCameraView(): IAspectRatio {
@@ -41,26 +43,20 @@ class UsbCameraFragment : CameraFragment() {
         return binding?.cameraContainer
     }
 
-    override fun getCameraRequest(): CameraRequest {
-        return CameraRequest.Builder()
-            .setPreviewWidth(1280)
-            .setPreviewHeight(720)
-            .setRenderMode(CameraRequest.RenderMode.OPENGL)
-            .setAspectRatioShow(true)
-            .create()
-    }
-
     override fun getGravity(): Int = Gravity.CENTER
 
-    override fun onCameraState(
-        self: MultiCameraClient.ICamera,
-        code: ICameraStateCallBack.State,
-        msg: String?
-    ) {
-        when (code) {
-            ICameraStateCallBack.State.OPENED -> onCameraOpened()
-            ICameraStateCallBack.State.CLOSED -> onCameraClosed()
-            ICameraStateCallBack.State.ERROR -> onCameraError(msg)
+    // --- Data / lifecycle ---
+
+    override fun initData() {
+        super.initData()
+        // Observe camera open/close/error state via the EventBus provided by AUSBC
+        EventBus.with<CameraStatus>(BusKey.KEY_CAMERA_STATUS).observe(this) { status ->
+            when (status.code) {
+                CameraStatus.START             -> onCameraOpened()
+                CameraStatus.STOP             -> onCameraClosed()
+                CameraStatus.ERROR,
+                CameraStatus.ERROR_PREVIEW_SIZE -> onCameraError(status.message)
+            }
         }
     }
 
