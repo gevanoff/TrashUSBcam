@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  USB device filter – matches all UVC-class USB cameras (no vendor/product restriction).
+  This allows the app to be auto-launched when any USB camera is plugged in via OTG.
+-->
+<resources>
+    <usb-device />
+</resources>
