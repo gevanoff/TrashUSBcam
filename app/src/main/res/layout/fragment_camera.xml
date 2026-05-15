@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <!-- Container into which the library inserts the camera preview surface at runtime -->
+    <FrameLayout
+        android:id="@+id/camera_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+    <!-- Status overlay shown when no camera is connected or on error -->
+    <TextView
+        android:id="@+id/status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:padding="16dp"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:text="@string/camera_disconnected" />
+
+</FrameLayout>

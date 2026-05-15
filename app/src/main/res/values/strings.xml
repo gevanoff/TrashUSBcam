@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">TrashUSBcam</string>
+    <string name="camera_disconnected">Connect a USB camera to begin</string>
+    <string name="camera_error">Camera error: %s</string>
+    <string name="error_unknown">unknown error</string>
+    <string name="permission_required">Camera permission is required to view USB camera</string>
+</resources>
