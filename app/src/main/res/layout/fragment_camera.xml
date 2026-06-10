@@ -22,4 +22,190 @@
         android:textSize="18sp"
         android:text="@string/camera_disconnected" />
 
+    <LinearLayout
+        android:id="@+id/recording_indicator"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="20dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:background="@drawable/recording_dot" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/recording"
+            android:textColor="@android:color/white"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/media_preview_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="112dp"
+        android:background="#D9000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_margin="24dp"
+            android:background="@drawable/gallery_content_frame_background"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
+
+                <ImageView
+                    android:id="@+id/photo_preview"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:adjustViewBounds="true"
+                    android:contentDescription="@string/capture_preview"
+                    android:scaleType="fitCenter" />
+
+                <VideoView
+                    android:id="@+id/video_preview"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/share_media_button"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="12dp"
+                    android:background="@drawable/preview_button_background"
+                    android:contentDescription="@string/share_capture"
+                    android:padding="12dp"
+                    android:scaleType="center"
+                    android:src="@drawable/ic_share_24" />
+
+                <ImageButton
+                    android:id="@+id/delete_media_button"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="12dp"
+                    android:background="@drawable/preview_delete_button_background"
+                    android:contentDescription="@string/delete_capture"
+                    android:padding="12dp"
+                    android:scaleType="center"
+                    android:src="@drawable/ic_delete_24" />
+
+                <ImageButton
+                    android:id="@+id/close_preview_button"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/preview_button_background"
+                    android:contentDescription="@string/close_preview"
+                    android:padding="12dp"
+                    android:scaleType="center"
+                    android:src="@drawable/ic_close_24" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/gallery_rail"
+        android:layout_width="112dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:background="@drawable/gallery_rail_background"
+        android:paddingStart="8dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="12dp">
+
+        <View
+            android:layout_width="3dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="start"
+            android:background="@drawable/gallery_separator" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/gallery_content_frame_background"
+            android:padding="6dp">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/media_recycler"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:overScrollMode="never" />
+
+            <TextView
+                android:id="@+id/empty_gallery_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:text="@string/empty_gallery"
+                android:textColor="#CCFFFFFF"
+                android:textSize="12sp" />
+        </FrameLayout>
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/capture_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="64dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="24dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/capture_photo_button"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginEnd="16dp"
+            android:background="@drawable/capture_button_background"
+            android:contentDescription="@string/capture_photo"
+            android:enabled="false"
+            android:padding="14dp"
+            android:scaleType="center"
+            android:src="@drawable/ic_photo_camera_24"
+            android:tint="@android:color/white" />
+
+        <ImageButton
+            android:id="@+id/capture_video_button"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/capture_button_background"
+            android:contentDescription="@string/start_recording"
+            android:enabled="false"
+            android:padding="14dp"
+            android:scaleType="center"
+            android:src="@drawable/ic_videocam_24"
+            android:tint="@android:color/white" />
+    </LinearLayout>
+
 </FrameLayout>
