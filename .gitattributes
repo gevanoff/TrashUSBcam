@@ -1,0 +1,2 @@
+# Keep text files stable across Windows Git and Linux/WSL Git.
+* text=auto eol=lf
