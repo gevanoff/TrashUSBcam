@@ -49,6 +49,8 @@ class MainActivity : AppCompatActivity() {
                 showCameraFragment()
             } else {
                 Toast.makeText(this, R.string.permission_required, Toast.LENGTH_LONG).show()
+                // Wi-Fi cameras do not need Android's CAMERA permission.
+                showCameraFragment()
             }
         }
     }

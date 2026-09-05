@@ -1,14 +1,16 @@
 # TrashUSBcam
 
-An Android app to view live video from cheap USB-connected cameras such as USB endoscopes.
+An Android app to view live video from inexpensive USB and Wi-Fi cameras such as endoscopes and otoscopes.
 
 ## Overview
 
-TrashUSBcam uses the [AndroidUSBCamera (AUSBC)](https://github.com/jiangdongguo/AndroidUSBCamera) library to connect to UVC-class USB cameras via your Android device's OTG port and display a live preview on screen.
+TrashUSBcam uses the [AndroidUSBCamera (AUSBC)](https://github.com/jiangdongguo/AndroidUSBCamera) library for UVC-class USB cameras. It also includes a native Kotlin client for Soulear/i4season Wi-Fi cameras, with no proprietary vendor binary.
 
 ## Features
 
 - Automatically detects and connects to any UVC-class USB camera when plugged in via OTG
+- Automatically detects a compatible Soulear/i4season camera at `192.168.1.1` and binds its UDP sockets to the camera's Wi-Fi network, even while cellular data is enabled
+- Reassembles and displays the Soulear camera's chunked MJPEG stream
 - Displays live video preview in landscape orientation
 - Full-screen camera view with aspect-ratio-correct rendering using OpenGL ES
 - Status overlay shows connection / error state when no camera is active
@@ -19,8 +21,8 @@ TrashUSBcam uses the [AndroidUSBCamera (AUSBC)](https://github.com/jiangdongguo/
 ## Requirements
 
 - Android 5.0 (API 21) or higher
-- Android device with USB OTG support
-- A UVC-class USB camera (e.g. a USB endoscope, mini USB webcam)
+- A UVC-class USB camera and an Android device with USB OTG support; or
+- Android 5.1 or newer and a compatible Soulear/i4season Wi-Fi camera
 
 ## Building
 
@@ -58,11 +60,11 @@ For an emulator smoke test:
 
 ## Usage
 
-1. Enable USB OTG on your Android device if required.
-2. Connect a USB camera to the device using a USB OTG adapter/cable.
-3. When prompted, allow the app to access the USB device.
-4. The live video feed will appear automatically.
-5. Use the camera button to save a photo, or the video button to start and stop recording.
+For USB, enable OTG if required, connect the camera, and grant the USB/camera permissions when prompted.
+
+For Soulear Wi-Fi, power on the camera and connect Android to its Wi-Fi access point before opening TrashUSBcam. The live feed appears automatically. Wi-Fi still capture is supported; MP4 recording is currently USB-only.
+
+Use the camera button to save a photo. With a USB camera, use the video button to start and stop recording.
 
 ## Library
 
@@ -70,7 +72,10 @@ This project uses [jiangdongguo/AndroidUSBCamera](https://github.com/jiangdonggu
 
 > **Note:** v3.3.x releases have a broken JitPack build due to NDK toolchain issues; v3.2.7 is the latest version with a successful JitPack build.
 
+The Soulear implementation uses Android's standard networking and bitmap APIs plus the independently documented i4season UDP protocol. Protocol research was cross-checked against the MIT-licensed [MS5 WiFi microscope viewer](https://github.com/Fyfar/ms5-wifi-microscope); no vendor native library is bundled.
+
 ## Compatibility Notes
 
 - The app targets SDK 35. AUSBC v3.2.7 uses legacy dynamic receiver registration, so the app wraps the AUSBC context and supplies `RECEIVER_NOT_EXPORTED` on Android 13+.
 - The APK is filtered to `armeabi-v7a` and `arm64-v8a` because AUSBC's UVC native libraries are ARM-only. Physical Android phones should be fine; x86-only emulators are not supported.
+- Verified Soulear hardware: `YPC BK7231U-XRH-FBPRO`, firmware `HFNVB10B`, SSID `Soulear-394b3`. Its UDP header advertises 640×480 while its MJPEG images decode to 480×480; the preview follows the decoded image dimensions.

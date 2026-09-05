@@ -13,6 +13,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -54,6 +55,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Fragment that opens and displays live preview from a UVC USB camera.
@@ -71,7 +75,16 @@ class UsbCameraFragment : CameraFragment() {
     private var mediaAdapter: MediaThumbnailAdapter? = null
     private var selectedGalleryItem: GalleryItem? = null
     private var pendingDeleteItem: GalleryItem? = null
+    private var soulearDiscoveryClient: SoulearDiscoveryClient? = null
+    private var soulearVideoClient: SoulearVideoClient? = null
+    private var soulearStatus: String? = null
+    private var soulearStreaming = false
+    private var soulearDisplayedBitmap: Bitmap? = null
+    private var soulearRetiredBitmap: Bitmap? = null
+    private val pendingSoulearFrame = AtomicReference<SoulearFrameAssembler.Frame?>()
+    private val soulearDecodeScheduled = AtomicBoolean(false)
     private val mediaPublisher = Executors.newSingleThreadExecutor()
+    private val soulearFrameDecoder = Executors.newSingleThreadExecutor()
     private val timestampFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
     private val audioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -150,8 +163,9 @@ class UsbCameraFragment : CameraFragment() {
         setupGallery()
         binding?.capturePhotoButton?.setOnClickListener { capturePhoto() }
         binding?.captureVideoButton?.setOnClickListener { toggleVideoRecording() }
-        setCaptureControlsEnabled(false)
+        refreshCaptureControls()
         loadGallery()
+        startSoulearDiscovery()
 
         // Observe camera open/close/error state via the EventBus provided by AUSBC
         EventBus.with<CameraStatus>(BusKey.KEY_CAMERA_STATUS).observe(this) { status ->
@@ -167,34 +181,188 @@ class UsbCameraFragment : CameraFragment() {
     // --- Camera state helpers ---
 
     private fun onCameraOpened() {
+        binding?.soulearPreview?.visibility = View.GONE
         binding?.statusText?.visibility = View.GONE
-        setCaptureControlsEnabled(true)
+        refreshCaptureControls()
     }
 
     private fun onCameraClosed() {
         if (isRecording) {
             stopVideoRecording()
         }
-        binding?.statusText?.apply {
-            setText(R.string.camera_disconnected)
-            visibility = View.VISIBLE
+        if (soulearStreaming && soulearDisplayedBitmap != null) {
+            binding?.soulearPreview?.visibility = View.VISIBLE
+            binding?.statusText?.visibility = View.GONE
+        } else {
+            binding?.statusText?.apply {
+                text = soulearStatus ?: getString(R.string.camera_disconnected)
+                visibility = View.VISIBLE
+            }
         }
-        setCaptureControlsEnabled(false)
+        refreshCaptureControls()
+    }
+
+    private fun startSoulearDiscovery() {
+        soulearDiscoveryClient?.close()
+        soulearDiscoveryClient = SoulearDiscoveryClient(
+            requireContext(),
+            object : SoulearDiscoveryClient.Listener {
+                override fun onSearching() {
+                    if (!isCameraOpened()) {
+                        binding?.statusText?.apply {
+                            setText(R.string.soulear_searching)
+                            visibility = View.VISIBLE
+                        }
+                    }
+                }
+
+                override fun onCameraDetected(result: SoulearDiscoveryClient.Detection) {
+                    val model = result.deviceInfo?.product?.takeIf { it.isNotBlank() } ?: "camera"
+                    soulearStatus = getString(
+                        R.string.soulear_detected,
+                        model,
+                        result.cameraAddress
+                    )
+                    if (!isCameraOpened()) {
+                        binding?.statusText?.apply {
+                            text = soulearStatus
+                            visibility = View.VISIBLE
+                        }
+                    }
+                    startSoulearVideo(result)
+                }
+
+                override fun onCameraUnavailable(reason: String) {
+                    stopSoulearVideo(clearPreview = true)
+                    soulearStatus = null
+                    if (!isCameraOpened()) {
+                        binding?.statusText?.apply {
+                            text = getString(R.string.camera_disconnected_with_wifi, reason)
+                            visibility = View.VISIBLE
+                        }
+                    }
+                }
+            }
+        ).also { it.start() }
+    }
+
+    private fun startSoulearVideo(result: SoulearDiscoveryClient.Detection) {
+        soulearVideoClient?.close()
+        soulearVideoClient = SoulearVideoClient(
+            network = result.network,
+            cameraAddress = result.cameraAddress,
+            listener = object : SoulearVideoClient.Listener {
+                override fun onStreamStarting(localPort: Int) {
+                    if (!isCameraOpened()) {
+                        binding?.statusText?.apply {
+                            text = getString(R.string.soulear_stream_starting, localPort)
+                            visibility = View.VISIBLE
+                        }
+                    }
+                }
+
+                override fun onFrame(frame: SoulearFrameAssembler.Frame) {
+                    queueSoulearFrame(frame)
+                }
+
+                override fun onStreamError(reason: String) {
+                    soulearVideoClient?.close()
+                    soulearVideoClient = null
+                    soulearStreaming = false
+                    refreshCaptureControls()
+                    if (!isCameraOpened()) {
+                        binding?.statusText?.apply {
+                            text = getString(R.string.soulear_stream_error, reason)
+                            visibility = View.VISIBLE
+                        }
+                    }
+                }
+            }
+        ).also { it.start() }
+    }
+
+    private fun queueSoulearFrame(frame: SoulearFrameAssembler.Frame) {
+        pendingSoulearFrame.set(frame)
+        if (!soulearDecodeScheduled.compareAndSet(false, true)) return
+        try {
+            soulearFrameDecoder.execute(::decodePendingSoulearFrames)
+        } catch (_: RejectedExecutionException) {
+            soulearDecodeScheduled.set(false)
+        }
+    }
+
+    private fun decodePendingSoulearFrames() {
+        try {
+            while (true) {
+                val frame = pendingSoulearFrame.getAndSet(null) ?: break
+                val bitmap = BitmapFactory.decodeByteArray(frame.jpeg, 0, frame.jpeg.size) ?: continue
+                runOnUi { displaySoulearFrame(bitmap) }
+            }
+        } finally {
+            soulearDecodeScheduled.set(false)
+            if (pendingSoulearFrame.get() != null && soulearDecodeScheduled.compareAndSet(false, true)) {
+                try {
+                    soulearFrameDecoder.execute(::decodePendingSoulearFrames)
+                } catch (_: RejectedExecutionException) {
+                    soulearDecodeScheduled.set(false)
+                }
+            }
+        }
+    }
+
+    private fun displaySoulearFrame(bitmap: Bitmap) {
+        val currentBinding = binding
+        if (currentBinding == null || soulearVideoClient == null) {
+            bitmap.recycle()
+            return
+        }
+        if (!soulearStreaming) {
+            android.util.Log.i(
+                TAG,
+                "Soulear preview active: decodedSize=${bitmap.width}x${bitmap.height}"
+            )
+        }
+        soulearRetiredBitmap?.recycle()
+        soulearRetiredBitmap = soulearDisplayedBitmap
+        soulearDisplayedBitmap = bitmap
+        soulearStreaming = true
+        currentBinding.soulearPreview.setImageBitmap(bitmap)
+        currentBinding.soulearPreview.visibility = if (isCameraOpened()) View.GONE else View.VISIBLE
+        if (!isCameraOpened()) currentBinding.statusText.visibility = View.GONE
+        refreshCaptureControls()
+    }
+
+    private fun stopSoulearVideo(clearPreview: Boolean) {
+        soulearVideoClient?.close()
+        soulearVideoClient = null
+        soulearStreaming = false
+        pendingSoulearFrame.set(null)
+        if (clearPreview) {
+            binding?.soulearPreview?.setImageDrawable(null)
+            soulearDisplayedBitmap?.recycle()
+            soulearRetiredBitmap?.recycle()
+            soulearDisplayedBitmap = null
+            soulearRetiredBitmap = null
+            binding?.soulearPreview?.visibility = View.GONE
+        }
+        refreshCaptureControls()
     }
 
     private fun onCameraError(msg: String?) {
         if (isRecording) {
             stopVideoRecording()
         }
-        binding?.statusText?.apply {
-            text = getString(R.string.camera_error, msg ?: getString(R.string.error_unknown))
-            visibility = View.VISIBLE
+        if (!soulearStreaming) {
+            binding?.statusText?.apply {
+                text = getString(R.string.camera_error, msg ?: getString(R.string.error_unknown))
+                visibility = View.VISIBLE
+            }
         }
-        setCaptureControlsEnabled(false)
+        refreshCaptureControls()
     }
 
     private fun capturePhoto() {
-        if (!isCameraOpened()) {
+        if (!isCameraOpened() && !soulearStreaming) {
             showToast(getString(R.string.camera_not_ready))
             return
         }
@@ -202,15 +370,19 @@ class UsbCameraFragment : CameraFragment() {
             return
         }
 
-        val textureView = cameraTextureView
-        if (textureView == null || !textureView.isAvailable) {
-            showToast(getString(R.string.camera_not_ready))
-            return
-        }
-        val bitmap = try {
-            textureView.bitmap
-        } catch (error: IllegalStateException) {
-            null
+        val bitmap = if (isCameraOpened()) {
+            val textureView = cameraTextureView
+            if (textureView == null || !textureView.isAvailable) null else try {
+                textureView.bitmap
+            } catch (_: IllegalStateException) {
+                null
+            }
+        } else {
+            try {
+                soulearDisplayedBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+            } catch (_: IllegalStateException) {
+                null
+            }
         }
         if (bitmap == null) {
             showToast(getString(R.string.capture_failed, getString(R.string.error_unknown)))
@@ -247,7 +419,12 @@ class UsbCameraFragment : CameraFragment() {
 
     private fun startVideoRecording() {
         if (!isCameraOpened()) {
-            showToast(getString(R.string.camera_not_ready))
+            showToast(
+                getString(
+                    if (soulearStreaming) R.string.wifi_video_recording_not_supported
+                    else R.string.camera_not_ready
+                )
+            )
             return
         }
         if (!hasAudioPermission()) {
@@ -641,14 +818,16 @@ class UsbCameraFragment : CameraFragment() {
         }
     }
 
-    private fun setCaptureControlsEnabled(enabled: Boolean) {
+    private fun refreshCaptureControls() {
+        val photoReady = isCameraOpened() || soulearStreaming
+        val videoReady = isCameraOpened()
         binding?.capturePhotoButton?.apply {
-            isEnabled = enabled && !isPhotoCapturing
-            alpha = if (enabled && !isPhotoCapturing) 1f else DISABLED_ALPHA
+            isEnabled = photoReady && !isPhotoCapturing
+            alpha = if (isEnabled) 1f else DISABLED_ALPHA
         }
         binding?.captureVideoButton?.apply {
-            isEnabled = enabled || isRecording
-            alpha = if (enabled || isRecording) 1f else DISABLED_ALPHA
+            isEnabled = videoReady || isRecording
+            alpha = if (isEnabled) 1f else DISABLED_ALPHA
         }
     }
 
@@ -659,7 +838,7 @@ class UsbCameraFragment : CameraFragment() {
     private fun setPhotoCaptureState(capturing: Boolean) {
         isPhotoCapturing = capturing
         binding?.capturePhotoButton?.apply {
-            isEnabled = isCameraOpened() && !capturing
+            isEnabled = (isCameraOpened() || soulearStreaming) && !capturing
             alpha = if (isEnabled) 1f else DISABLED_ALPHA
         }
     }
@@ -705,14 +884,24 @@ class UsbCameraFragment : CameraFragment() {
         if (mediaAdapter != null) {
             loadGallery()
         }
+        if (binding != null && soulearDiscoveryClient == null) {
+            startSoulearDiscovery()
+        }
     }
 
     override fun onPause() {
         binding?.videoPreview?.stopPlayback()
+        soulearDiscoveryClient?.close()
+        soulearDiscoveryClient = null
+        stopSoulearVideo(clearPreview = true)
         super.onPause()
     }
 
     override fun onDestroyView() {
+        soulearDiscoveryClient?.close()
+        soulearDiscoveryClient = null
+        stopSoulearVideo(clearPreview = true)
+        soulearStatus = null
         binding?.videoPreview?.stopPlayback()
         binding?.mediaRecycler?.adapter = null
         mediaAdapter?.shutdown()
@@ -728,6 +917,7 @@ class UsbCameraFragment : CameraFragment() {
             captureVideoStop()
         }
         mediaPublisher.shutdown()
+        soulearFrameDecoder.shutdownNow()
         super.onDestroy()
     }
 

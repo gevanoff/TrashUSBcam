@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/black">
@@ -10,6 +11,16 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_gravity="center" />
+
+    <!-- Native Wi-Fi MJPEG preview; hidden whenever the USB preview is active. -->
+    <ImageView
+        android:id="@+id/soulear_preview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/black"
+        android:contentDescription="@string/soulear_preview"
+        android:scaleType="fitCenter"
+        android:visibility="gone" />
 
     <!-- Status overlay shown when no camera is connected or on error -->
     <TextView
@@ -193,7 +204,7 @@
             android:padding="14dp"
             android:scaleType="center"
             android:src="@drawable/ic_photo_camera_24"
-            android:tint="@android:color/white" />
+            app:tint="@android:color/white" />
 
         <ImageButton
             android:id="@+id/capture_video_button"
@@ -205,7 +216,7 @@
             android:padding="14dp"
             android:scaleType="center"
             android:src="@drawable/ic_videocam_24"
-            android:tint="@android:color/white" />
+            app:tint="@android:color/white" />
     </LinearLayout>
 
 </FrameLayout>

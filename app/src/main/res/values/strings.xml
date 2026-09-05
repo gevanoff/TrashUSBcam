@@ -1,11 +1,18 @@
 <resources>
     <string name="app_name">TrashUSBcam</string>
     <string name="camera_disconnected">Connect a USB camera to begin</string>
+    <string name="camera_disconnected_with_wifi">Connect a USB camera, or connect to Soulear Wi-Fi\n%1$s</string>
+    <string name="soulear_searching">Looking for USB or Soulear Wi-Fi camera…</string>
+    <string name="soulear_detected">Soulear %1$s detected at %2$s\nOpening Wi-Fi video…</string>
+    <string name="soulear_stream_starting">Opening Soulear Wi-Fi video on local UDP port %1$d…</string>
+    <string name="soulear_stream_error">Soulear video unavailable: %1$s</string>
+    <string name="soulear_preview">Soulear Wi-Fi camera preview</string>
     <string name="camera_error">Camera error: %s</string>
     <string name="error_unknown">unknown error</string>
     <string name="permission_required">Camera permission is required to view USB camera</string>
     <string name="audio_permission_required">Microphone permission is required to record video</string>
-    <string name="camera_not_ready">No USB camera is active</string>
+    <string name="camera_not_ready">No camera is active</string>
+    <string name="wifi_video_recording_not_supported">Video recording is currently available for USB cameras only</string>
     <string name="capture_photo">Take photo</string>
     <string name="capture_preview">Capture preview</string>
     <string name="start_recording">Start recording</string>
