@@ -56,6 +56,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -77,6 +78,7 @@ class UsbCameraFragment : CameraFragment() {
     private var pendingDeleteItem: GalleryItem? = null
     private var soulearDiscoveryClient: SoulearDiscoveryClient? = null
     private var soulearVideoClient: SoulearVideoClient? = null
+    @Volatile private var soulearRecorder: SoulearMp4Recorder? = null
     private var soulearStatus: String? = null
     private var soulearStreaming = false
     private var soulearDisplayedBitmap: Bitmap? = null
@@ -187,7 +189,7 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     private fun onCameraClosed() {
-        if (isRecording) {
+        if (isRecording && soulearRecorder == null) {
             stopVideoRecording()
         }
         if (soulearStreaming && soulearDisplayedBitmap != null) {
@@ -266,6 +268,9 @@ class UsbCameraFragment : CameraFragment() {
                 }
 
                 override fun onStreamError(reason: String) {
+                    if (soulearRecorder != null && isRecording) {
+                        stopVideoRecording()
+                    }
                     soulearVideoClient?.close()
                     soulearVideoClient = null
                     soulearStreaming = false
@@ -296,6 +301,7 @@ class UsbCameraFragment : CameraFragment() {
             while (true) {
                 val frame = pendingSoulearFrame.getAndSet(null) ?: break
                 val bitmap = BitmapFactory.decodeByteArray(frame.jpeg, 0, frame.jpeg.size) ?: continue
+                soulearRecorder?.offerFrame(bitmap)
                 runOnUi { displaySoulearFrame(bitmap) }
             }
         } finally {
@@ -333,6 +339,9 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     private fun stopSoulearVideo(clearPreview: Boolean) {
+        if (soulearRecorder != null && isRecording) {
+            stopVideoRecording()
+        }
         soulearVideoClient?.close()
         soulearVideoClient = null
         soulearStreaming = false
@@ -349,7 +358,7 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     private fun onCameraError(msg: String?) {
-        if (isRecording) {
+        if (isRecording && soulearRecorder == null) {
             stopVideoRecording()
         }
         if (!soulearStreaming) {
@@ -419,12 +428,11 @@ class UsbCameraFragment : CameraFragment() {
 
     private fun startVideoRecording() {
         if (!isCameraOpened()) {
-            showToast(
-                getString(
-                    if (soulearStreaming) R.string.wifi_video_recording_not_supported
-                    else R.string.camera_not_ready
-                )
-            )
+            if (soulearStreaming) {
+                startSoulearVideoRecording()
+            } else {
+                showToast(getString(R.string.camera_not_ready))
+            }
             return
         }
         if (!hasAudioPermission()) {
@@ -438,8 +446,58 @@ class UsbCameraFragment : CameraFragment() {
         captureVideoStart(createCaptureCallback(CaptureKind.Video, file), file.absolutePath, VIDEO_DURATION_UNLIMITED)
     }
 
+    private fun startSoulearVideoRecording() {
+        if (soulearRecorder != null) return
+        val source = soulearDisplayedBitmap
+        if (source == null || source.isRecycled || source.width % 2 != 0 || source.height % 2 != 0) {
+            showToast(getString(R.string.camera_not_ready))
+            return
+        }
+
+        val baseFile = createCaptureFile(CaptureKind.Video)
+        val outputFile = File("${baseFile.absolutePath}.${CaptureKind.Video.extension}")
+        lateinit var recorder: SoulearMp4Recorder
+        recorder = SoulearMp4Recorder(
+            outputFile = outputFile,
+            width = source.width,
+            height = source.height,
+            listener = object : SoulearMp4Recorder.Listener {
+                override fun onRecordingStarted(encoderName: String) {
+                    android.util.Log.i(TAG, "Soulear MP4 recording started with $encoderName")
+                }
+
+                override fun onRecordingComplete(file: File, frameCount: Int) {
+                    android.util.Log.i(
+                        TAG,
+                        "Soulear MP4 recording complete: frames=$frameCount bytes=${file.length()}"
+                    )
+                    if (soulearRecorder === recorder) soulearRecorder = null
+                    publishMedia(CaptureKind.Video, file)
+                    runOnUi { refreshCaptureControls() }
+                }
+
+                override fun onRecordingError(reason: String) {
+                    if (soulearRecorder === recorder) soulearRecorder = null
+                    runOnUi {
+                        setRecordingState(false)
+                        showToast(getString(R.string.capture_failed, reason))
+                    }
+                }
+            }
+        )
+        soulearRecorder = recorder
+        setRecordingState(true)
+        recorder.start()
+    }
+
     private fun stopVideoRecording() {
         if (!isRecording) {
+            return
+        }
+        soulearRecorder?.let { recorder ->
+            setRecordingState(false)
+            recorder.stop()
+            refreshCaptureControls()
             return
         }
         captureVideoStop()
@@ -820,7 +878,7 @@ class UsbCameraFragment : CameraFragment() {
 
     private fun refreshCaptureControls() {
         val photoReady = isCameraOpened() || soulearStreaming
-        val videoReady = isCameraOpened()
+        val videoReady = isCameraOpened() || (soulearStreaming && soulearRecorder == null)
         binding?.capturePhotoButton?.apply {
             isEnabled = photoReady && !isPhotoCapturing
             alpha = if (isEnabled) 1f else DISABLED_ALPHA
@@ -849,7 +907,7 @@ class UsbCameraFragment : CameraFragment() {
         binding?.captureVideoButton?.apply {
             setImageResource(if (recording) R.drawable.ic_stop_24 else R.drawable.ic_videocam_24)
             contentDescription = getString(if (recording) R.string.stop_recording else R.string.start_recording)
-            isEnabled = isCameraOpened() || recording
+            isEnabled = isCameraOpened() || (soulearStreaming && soulearRecorder == null) || recording
             alpha = if (isEnabled) 1f else DISABLED_ALPHA
         }
     }
@@ -891,6 +949,9 @@ class UsbCameraFragment : CameraFragment() {
 
     override fun onPause() {
         binding?.videoPreview?.stopPlayback()
+        if (soulearRecorder != null && isRecording) {
+            stopVideoRecording()
+        }
         soulearDiscoveryClient?.close()
         soulearDiscoveryClient = null
         stopSoulearVideo(clearPreview = true)
@@ -913,10 +974,19 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     override fun onDestroy() {
-        if (isRecording) {
+        val wifiRecorder = soulearRecorder
+        if (wifiRecorder != null) {
+            wifiRecorder.stopAndWait(RECORDING_FINALIZE_TIMEOUT_MS)
+            soulearRecorder = null
+        } else if (isRecording) {
             captureVideoStop()
         }
         mediaPublisher.shutdown()
+        try {
+            mediaPublisher.awaitTermination(RECORDING_FINALIZE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         soulearFrameDecoder.shutdownNow()
         super.onDestroy()
     }
@@ -988,5 +1058,6 @@ class UsbCameraFragment : CameraFragment() {
         private const val VIDEO_DURATION_UNLIMITED = 0L
         private const val JPEG_QUALITY = 95
         private const val DISABLED_ALPHA = 0.45f
+        private const val RECORDING_FINALIZE_TIMEOUT_MS = 3_000L
     }
 }

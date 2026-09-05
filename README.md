@@ -62,9 +62,9 @@ For an emulator smoke test:
 
 For USB, enable OTG if required, connect the camera, and grant the USB/camera permissions when prompted.
 
-For Soulear Wi-Fi, power on the camera and connect Android to its Wi-Fi access point before opening TrashUSBcam. The live feed appears automatically. Wi-Fi still capture is supported; MP4 recording is currently USB-only.
+For Soulear Wi-Fi, power on the camera and connect Android to its Wi-Fi access point before opening TrashUSBcam. The live feed appears automatically. Still photos and video-only H.264 MP4 recordings are supported; this Soulear feed does not include audio.
 
-Use the camera button to save a photo. With a USB camera, use the video button to start and stop recording.
+Use the camera button to save a photo, or the video button to start and stop recording.
 
 ## Library
 
