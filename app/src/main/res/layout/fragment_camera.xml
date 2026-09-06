@@ -33,6 +33,26 @@
         android:textSize="18sp"
         android:text="@string/camera_disconnected" />
 
+    <Button
+        android:id="@+id/wifi_camera_picker"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/camera_picker_background"
+        android:ellipsize="end"
+        android:maxWidth="320dp"
+        android:maxLines="1"
+        android:minHeight="48dp"
+        android:minWidth="48dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:text="@string/wifi_camera_picker_title"
+        android:textAllCaps="false"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
     <LinearLayout
         android:id="@+id/recording_indicator"
         android:layout_width="wrap_content"

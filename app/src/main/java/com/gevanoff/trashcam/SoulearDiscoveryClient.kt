@@ -36,10 +36,12 @@ internal class SoulearDiscoveryClient(
     interface Listener {
         fun onSearching()
         fun onCameraDetected(result: Detection)
+        fun onCameraLost(cameraId: String)
         fun onCameraUnavailable(reason: String)
     }
 
     data class Detection(
+        val cameraId: String,
         val cameraAddress: String,
         val phoneAddress: String,
         val responseLength: Int,
@@ -51,12 +53,14 @@ internal class SoulearDiscoveryClient(
     private val connectivityManager =
         context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val worker: ExecutorService = Executors.newSingleThreadExecutor()
+    private val worker: ExecutorService = Executors.newCachedThreadPool()
     private val closed = AtomicBoolean(false)
-    private val probing = AtomicBoolean(false)
+    private val stateLock = Any()
+    private val availableNetworks = mutableSetOf<Network>()
+    private val probingNetworks = mutableSetOf<Network>()
+    private val detectionsByNetwork = mutableMapOf<Network, Detection>()
+    private val probeSockets = mutableMapOf<Network, DatagramSocket>()
     private var callbackRegistered = false
-    @Volatile private var detectedNetwork: Network? = null
-    @Volatile private var probeSocket: DatagramSocket? = null
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -68,11 +72,17 @@ internal class SoulearDiscoveryClient(
         }
 
         override fun onLost(network: Network) {
-            if (detectedNetwork == network) {
-                detectedNetwork = null
-                probing.set(false)
-                probeSocket?.close()
-                postUnavailable("Soulear Wi-Fi connection was lost")
+            val (detection, socket, noCamerasRemain) = synchronized(stateLock) {
+                availableNetworks.remove(network)
+                probingNetworks.remove(network)
+                val removedDetection = detectionsByNetwork.remove(network)
+                val removedSocket = probeSockets.remove(network)
+                Triple(removedDetection, removedSocket, detectionsByNetwork.isEmpty())
+            }
+            socket?.close()
+            detection?.let { postLost(it.cameraId) }
+            if (detection != null && noCamerasRemain) {
+                postUnavailable("Wi-Fi camera connection was lost")
             }
         }
     }
@@ -80,7 +90,7 @@ internal class SoulearDiscoveryClient(
     fun start() {
         if (closed.get()) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) {
-            postUnavailable("Soulear Wi-Fi cameras require Android 5.1 or newer")
+            postUnavailable("Wi-Fi cameras require Android 5.1 or newer")
             return
         }
         mainHandler.post { listener.onSearching() }
@@ -97,14 +107,17 @@ internal class SoulearDiscoveryClient(
         }
 
         mainHandler.postDelayed({
-            if (!closed.get() && !probing.get()) {
-                listener.onCameraUnavailable("Connect to a Soulear Wi-Fi network")
+            val nothingFound = synchronized(stateLock) {
+                detectionsByNetwork.isEmpty() && probingNetworks.isEmpty()
+            }
+            if (!closed.get() && nothingFound) {
+                listener.onCameraUnavailable("Connect this phone to the camera's Wi-Fi network")
             }
         }, NETWORK_SEARCH_TIMEOUT_MS)
     }
 
     private fun consider(network: Network, suppliedProperties: LinkProperties? = null) {
-        if (closed.get() || probing.get()) return
+        if (closed.get()) return
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return
         if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return
         val properties = suppliedProperties ?: connectivityManager.getLinkProperties(network) ?: return
@@ -120,12 +133,21 @@ internal class SoulearDiscoveryClient(
             .firstOrNull { it.hostAddress == DEFAULT_CAMERA_ADDRESS }
             ?: return
 
-        if (!probing.compareAndSet(false, true)) return
+        val shouldProbe = synchronized(stateLock) {
+            availableNetworks.add(network)
+            if (network in probingNetworks || network in detectionsByNetwork) {
+                false
+            } else {
+                probingNetworks.add(network)
+                true
+            }
+        }
+        if (!shouldProbe) return
         try {
             worker.execute { probe(network, phoneAddress, cameraAddress) }
         } catch (_: RejectedExecutionException) {
             // close() raced a final ConnectivityManager callback.
-            probing.set(false)
+            synchronized(stateLock) { probingNetworks.remove(network) }
         }
     }
 
@@ -134,7 +156,15 @@ internal class SoulearDiscoveryClient(
         var detected = false
         try {
             DatagramSocket(null).use { socket ->
-                probeSocket = socket
+                val networkStillAvailable = synchronized(stateLock) {
+                    if (network in availableNetworks && !closed.get()) {
+                        probeSockets[network] = socket
+                        true
+                    } else {
+                        false
+                    }
+                }
+                if (!networkStillAvailable) return
                 socket.reuseAddress = true
                 socket.bind(InetSocketAddress(0))
                 bindSocket(network, socket)
@@ -162,6 +192,10 @@ internal class SoulearDiscoveryClient(
                     }
 
                     val responseLength = responsePacket.length
+                    if (responsePacket.address != cameraAddress) {
+                        lastFailure = "Unexpected response from ${responsePacket.address.hostAddress}"
+                        return@repeat
+                    }
                     if (!SoulearProtocol.hasMagic(buffer, responseLength)) {
                         lastFailure = "Unexpected ${responseLength}-byte camera response"
                         return@repeat
@@ -175,18 +209,27 @@ internal class SoulearDiscoveryClient(
                             "vendor=${deviceInfo?.vendor} product=${deviceInfo?.product} " +
                             "firmware=${deviceInfo?.firmwareVersion} ssid=${deviceInfo?.ssid}"
                     )
-                    detected = true
-                    detectedNetwork = network
-                    postDetected(
-                        Detection(
-                            cameraAddress = cameraAddress.hostAddress ?: DEFAULT_CAMERA_ADDRESS,
-                            phoneAddress = phoneAddress.hostAddress ?: "unknown",
-                            responseLength = responseLength,
-                            responseType = framed?.type,
-                            deviceInfo = deviceInfo,
-                            network = network
-                        )
+                    val address = cameraAddress.hostAddress ?: DEFAULT_CAMERA_ADDRESS
+                    val detection = Detection(
+                        cameraId = "$network|$address",
+                        cameraAddress = address,
+                        phoneAddress = phoneAddress.hostAddress ?: "unknown",
+                        responseLength = responseLength,
+                        responseType = framed?.type,
+                        deviceInfo = deviceInfo,
+                        network = network
                     )
+                    val publish = synchronized(stateLock) {
+                        if (network in availableNetworks && !closed.get()) {
+                            detectionsByNetwork[network] = detection
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    if (!publish) return
+                    detected = true
+                    postDetected(detection)
                     return
                 }
             }
@@ -196,9 +239,12 @@ internal class SoulearDiscoveryClient(
                 lastFailure = error.message ?: error.javaClass.simpleName
             }
         } finally {
-            probeSocket = null
-            if (!closed.get() && !detected) {
-                probing.set(false)
+            val noCamerasFound = synchronized(stateLock) {
+                probeSockets.remove(network)
+                probingNetworks.remove(network)
+                detectionsByNetwork.isEmpty()
+            }
+            if (!closed.get() && !detected && noCamerasFound) {
                 postUnavailable(lastFailure)
             }
         }
@@ -210,6 +256,12 @@ internal class SoulearDiscoveryClient(
         }
     }
 
+    private fun postLost(cameraId: String) {
+        mainHandler.post {
+            if (!closed.get()) listener.onCameraLost(cameraId)
+        }
+    }
+
     private fun postUnavailable(reason: String) {
         mainHandler.post {
             if (!closed.get()) listener.onCameraUnavailable(reason)
@@ -218,9 +270,15 @@ internal class SoulearDiscoveryClient(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        probeSocket?.close()
-        probeSocket = null
-        detectedNetwork = null
+        val sockets = synchronized(stateLock) {
+            val currentSockets = probeSockets.values.toList()
+            probeSockets.clear()
+            probingNetworks.clear()
+            detectionsByNetwork.clear()
+            availableNetworks.clear()
+            currentSockets
+        }
+        sockets.forEach { it.close() }
         if (callbackRegistered) {
             try {
                 connectivityManager.unregisterNetworkCallback(networkCallback)

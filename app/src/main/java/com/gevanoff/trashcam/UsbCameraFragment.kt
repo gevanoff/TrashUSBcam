@@ -79,6 +79,9 @@ class UsbCameraFragment : CameraFragment() {
     private var soulearDiscoveryClient: SoulearDiscoveryClient? = null
     private var soulearVideoClient: SoulearVideoClient? = null
     @Volatile private var soulearRecorder: SoulearMp4Recorder? = null
+    private val wifiCameraCollection = WifiCameraDiscoveryCollection()
+    private val wifiCameraDetections = linkedMapOf<String, SoulearDiscoveryClient.Detection>()
+    @Volatile private var activeWifiCameraId: String? = null
     private var soulearStatus: String? = null
     private var soulearStreaming = false
     private var soulearDisplayedBitmap: Bitmap? = null
@@ -165,7 +168,9 @@ class UsbCameraFragment : CameraFragment() {
         setupGallery()
         binding?.capturePhotoButton?.setOnClickListener { capturePhoto() }
         binding?.captureVideoButton?.setOnClickListener { toggleVideoRecording() }
+        binding?.wifiCameraPicker?.setOnClickListener { showWifiCameraPicker() }
         refreshCaptureControls()
+        refreshWifiCameraPicker(wifiCameraCollection.snapshot())
         loadGallery()
         startSoulearDiscovery()
 
@@ -219,24 +224,39 @@ class UsbCameraFragment : CameraFragment() {
                 }
 
                 override fun onCameraDetected(result: SoulearDiscoveryClient.Detection) {
-                    val model = result.deviceInfo?.product?.takeIf { it.isNotBlank() } ?: "camera"
-                    soulearStatus = getString(
-                        R.string.soulear_detected,
-                        model,
-                        result.cameraAddress
+                    wifiCameraDetections[result.cameraId] = result
+                    val deviceInfo = result.deviceInfo
+                    val model = deviceInfo?.product?.takeIf { it.isNotBlank() }
+                        ?: deviceInfo?.vendor?.takeIf { it.isNotBlank() }
+                        ?: getString(R.string.wifi_camera_generic)
+                    val snapshot = wifiCameraCollection.upsert(
+                        WifiCameraDiscoveryCollection.Camera(
+                            id = result.cameraId,
+                            name = model,
+                            address = result.cameraAddress,
+                            networkName = deviceInfo?.ssid?.takeIf { it.isNotBlank() }
+                        )
                     )
-                    if (!isCameraOpened()) {
-                        binding?.statusText?.apply {
-                            text = soulearStatus
-                            visibility = View.VISIBLE
-                        }
+                    activateSelectedWifiCamera(snapshot)
+                }
+
+                override fun onCameraLost(cameraId: String) {
+                    wifiCameraDetections.remove(cameraId)
+                    val activeCameraWasLost = activeWifiCameraId == cameraId
+                    val snapshot = wifiCameraCollection.remove(cameraId)
+                    if (activeCameraWasLost) {
+                        activeWifiCameraId = null
+                        stopSoulearVideo(clearPreview = true)
                     }
-                    startSoulearVideo(result)
+                    activateSelectedWifiCamera(snapshot)
                 }
 
                 override fun onCameraUnavailable(reason: String) {
+                    if (wifiCameraCollection.snapshot().cameras.isNotEmpty()) return
                     stopSoulearVideo(clearPreview = true)
+                    activeWifiCameraId = null
                     soulearStatus = null
+                    refreshWifiCameraPicker(wifiCameraCollection.snapshot())
                     if (!isCameraOpened()) {
                         binding?.statusText?.apply {
                             text = getString(R.string.camera_disconnected_with_wifi, reason)
@@ -246,6 +266,63 @@ class UsbCameraFragment : CameraFragment() {
                 }
             }
         ).also { it.start() }
+    }
+
+    private fun activateSelectedWifiCamera(snapshot: WifiCameraDiscoveryCollection.Snapshot) {
+        refreshWifiCameraPicker(snapshot)
+        val selected = snapshot.selectedCamera
+        val result = selected?.let { wifiCameraDetections[it.id] }
+        if (selected == null || result == null) {
+            if (activeWifiCameraId != null) stopSoulearVideo(clearPreview = true)
+            activeWifiCameraId = null
+            soulearStatus = null
+            return
+        }
+
+        soulearStatus = getString(
+            R.string.soulear_detected,
+            selected.name,
+            selected.address
+        )
+        if (activeWifiCameraId == selected.id && soulearVideoClient != null) return
+
+        stopSoulearVideo(clearPreview = true)
+        activeWifiCameraId = selected.id
+        if (!isCameraOpened()) {
+            binding?.statusText?.apply {
+                text = soulearStatus
+                visibility = View.VISIBLE
+            }
+        }
+        startSoulearVideo(result)
+    }
+
+    private fun showWifiCameraPicker() {
+        val snapshot = wifiCameraCollection.snapshot()
+        if (snapshot.cameras.size < 2) return
+        val selectedIndex = snapshot.cameras.indexOfFirst { it.id == snapshot.selectedId }
+        val labels = snapshot.cameras.map { it.pickerLabel }.toTypedArray()
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.wifi_camera_picker_title)
+            .setSingleChoiceItems(labels, selectedIndex) { dialog, index ->
+                val selected = snapshot.cameras.getOrNull(index) ?: return@setSingleChoiceItems
+                dialog.dismiss()
+                activateSelectedWifiCamera(wifiCameraCollection.select(selected.id))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun refreshWifiCameraPicker(snapshot: WifiCameraDiscoveryCollection.Snapshot) {
+        val selected = snapshot.selectedCamera
+        binding?.wifiCameraPicker?.apply {
+            visibility = if (snapshot.cameras.size > 1) View.VISIBLE else View.GONE
+            text = selected?.let { getString(R.string.wifi_camera_picker_current, it.name) }
+                ?: getString(R.string.wifi_camera_picker_title)
+            contentDescription = selected?.let {
+                getString(R.string.wifi_camera_picker_description, it.name)
+            } ?: getString(R.string.wifi_camera_picker_title)
+        }
     }
 
     private fun startSoulearVideo(result: SoulearDiscoveryClient.Detection) {
@@ -264,10 +341,12 @@ class UsbCameraFragment : CameraFragment() {
                 }
 
                 override fun onFrame(frame: SoulearFrameAssembler.Frame) {
+                    if (activeWifiCameraId != result.cameraId) return
                     queueSoulearFrame(frame)
                 }
 
                 override fun onStreamError(reason: String) {
+                    if (activeWifiCameraId != result.cameraId) return
                     if (soulearRecorder != null && isRecording) {
                         stopVideoRecording()
                     }
@@ -955,6 +1034,9 @@ class UsbCameraFragment : CameraFragment() {
         soulearDiscoveryClient?.close()
         soulearDiscoveryClient = null
         stopSoulearVideo(clearPreview = true)
+        activeWifiCameraId = null
+        wifiCameraDetections.clear()
+        refreshWifiCameraPicker(wifiCameraCollection.clear())
         super.onPause()
     }
 
@@ -962,6 +1044,9 @@ class UsbCameraFragment : CameraFragment() {
         soulearDiscoveryClient?.close()
         soulearDiscoveryClient = null
         stopSoulearVideo(clearPreview = true)
+        activeWifiCameraId = null
+        wifiCameraDetections.clear()
+        wifiCameraCollection.clear()
         soulearStatus = null
         binding?.videoPreview?.stopPlayback()
         binding?.mediaRecycler?.adapter = null

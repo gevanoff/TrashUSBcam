@@ -10,6 +10,7 @@ TrashUSBcam uses the [AndroidUSBCamera (AUSBC)](https://github.com/jiangdongguo/
 
 - Automatically detects and connects to any UVC-class USB camera when plugged in via OTG
 - Automatically detects a compatible Soulear/i4season camera at `192.168.1.1` and binds its UDP sockets to the camera's Wi-Fi network, even while cellular data is enabled
+- Collects compatible Wi-Fi discovery results and offers a camera picker when more than one candidate is available
 - Reassembles and displays the Soulear camera's chunked MJPEG stream
 - Displays live video preview in landscape orientation
 - Full-screen camera view with aspect-ratio-correct rendering using OpenGL ES
@@ -62,7 +63,11 @@ For an emulator smoke test:
 
 For USB, enable OTG if required, connect the camera, and grant the USB/camera permissions when prompted.
 
-For Soulear Wi-Fi, power on the camera and connect Android to its Wi-Fi access point before opening TrashUSBcam. The live feed appears automatically. Still photos and video-only H.264 MP4 recordings are supported; this Soulear feed does not include audio.
+For a compatible Wi-Fi camera, power on the camera and connect Android to its Wi-Fi access point before opening TrashUSBcam. The live feed appears automatically. Still photos and video-only H.264 MP4 recordings are supported; the currently supported Wi-Fi protocol does not include audio.
+
+TrashUSBcam maintains one active Wi-Fi camera stream. The first compatible discovery result is selected automatically; later results appear in a camera picker without interrupting the current stream. If the selected camera disappears, the app falls back to the next candidate. If USB and Wi-Fi cameras are available together, the USB preview takes precedence.
+
+The current Soulear/i4season discovery provider probes the camera endpoint at `192.168.1.1`, normally the gateway of the camera's own access-point network. The collection and picker can accept multiple results, but finding several cameras on one shared LAN will require an additional discovery provider or an expanded protocol-specific scan.
 
 Use the camera button to save a photo, or the video button to start and stop recording.
 

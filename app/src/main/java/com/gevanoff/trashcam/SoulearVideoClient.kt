@@ -144,7 +144,7 @@ internal class SoulearVideoClient(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
             network.bindSocket(socket)
         } else {
-            throw UnsupportedOperationException("Soulear Wi-Fi cameras require Android 5.1 or newer")
+            throw UnsupportedOperationException("Wi-Fi cameras require Android 5.1 or newer")
         }
     }
 
