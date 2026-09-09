@@ -33,7 +33,9 @@ internal class SoulearVideoClient(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val worker: ExecutorService = Executors.newSingleThreadExecutor()
     private val closed = AtomicBoolean(false)
-    private val assembler = SoulearFrameAssembler()
+    private val assembler = SoulearFrameAssembler(
+        onFrameRejected = { reason -> Log.w(TAG, reason) }
+    )
     @Volatile private var videoSocket: DatagramSocket? = null
     @Volatile private var controlSocket: DatagramSocket? = null
     private var messageId = 1
