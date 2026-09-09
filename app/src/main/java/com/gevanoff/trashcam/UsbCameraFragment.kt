@@ -477,6 +477,7 @@ class UsbCameraFragment : CameraFragment() {
             return
         }
         val file = createCaptureFile(CaptureKind.Photo)
+        val publishContext = requireContext().applicationContext
         setPhotoCaptureState(true)
         mediaPublisher.execute {
             try {
@@ -485,7 +486,7 @@ class UsbCameraFragment : CameraFragment() {
                         throw IOException("Could not encode photo")
                     }
                 }
-                publishMediaOnWorker(CaptureKind.Photo, file)
+                publishMediaOnWorker(CaptureKind.Photo, file, publishContext)
             } catch (error: Exception) {
                 runOnUi {
                     setPhotoCaptureState(false)
@@ -533,6 +534,7 @@ class UsbCameraFragment : CameraFragment() {
             return
         }
 
+        val publishContext = requireContext().applicationContext
         val baseFile = createCaptureFile(CaptureKind.Video)
         val outputFile = File("${baseFile.absolutePath}.${CaptureKind.Video.extension}")
         lateinit var recorder: SoulearMp4Recorder
@@ -551,7 +553,10 @@ class UsbCameraFragment : CameraFragment() {
                         "Soulear MP4 recording complete: frames=$frameCount bytes=${file.length()}"
                     )
                     if (soulearRecorder === recorder) soulearRecorder = null
-                    publishMedia(CaptureKind.Video, file)
+                    // This callback can outlive the Fragment during encoder drain. Publish on
+                    // the recorder worker with an application Context so teardown cannot reject
+                    // the work or detach the Context before the temporary MP4 is copied.
+                    publishMediaOnWorker(CaptureKind.Video, file, publishContext)
                     runOnUi { refreshCaptureControls() }
                 }
 
@@ -627,17 +632,18 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     private fun publishMedia(kind: CaptureKind, source: File) {
+        val publishContext = requireContext().applicationContext
         mediaPublisher.execute {
-            publishMediaOnWorker(kind, source)
+            publishMediaOnWorker(kind, source, publishContext)
         }
     }
 
-    private fun publishMediaOnWorker(kind: CaptureKind, source: File) {
+    private fun publishMediaOnWorker(kind: CaptureKind, source: File, publishContext: Context) {
         try {
             if (!source.exists()) {
                 throw IOException("Capture file was not created")
             }
-            val publishedUri = publishMediaStoreFile(kind, source)
+            val publishedUri = publishMediaStoreFile(kind, source, publishContext)
             runOnUi {
                 if (kind == CaptureKind.Photo) {
                     setPhotoCaptureState(false)
@@ -648,6 +654,7 @@ class UsbCameraFragment : CameraFragment() {
                 loadGallery(selectUri = publishedUri)
             }
         } catch (error: Exception) {
+            android.util.Log.e(TAG, "Could not publish ${kind.name.lowercase()} capture", error)
             runOnUi {
                 if (kind == CaptureKind.Photo) {
                     setPhotoCaptureState(false)
@@ -660,10 +667,10 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     @Throws(IOException::class)
-    private fun publishMediaStoreFile(kind: CaptureKind, source: File): Uri? {
+    private fun publishMediaStoreFile(kind: CaptureKind, source: File, publishContext: Context): Uri? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             MediaScannerConnection.scanFile(
-                requireContext(),
+                publishContext,
                 arrayOf(source.absolutePath),
                 arrayOf(kind.mimeType),
                 null
@@ -671,7 +678,7 @@ class UsbCameraFragment : CameraFragment() {
             return Uri.fromFile(source)
         }
 
-        val resolver = requireContext().contentResolver
+        val resolver = publishContext.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, source.name)
             put(MediaStore.MediaColumns.MIME_TYPE, kind.mimeType)

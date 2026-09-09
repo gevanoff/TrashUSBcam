@@ -3,14 +3,24 @@ package com.gevanoff.trashcam
 import java.io.ByteArrayOutputStream
 
 /** Reassembles the camera's unordered MJPEG UDP chunks into complete JPEG images. */
-internal class SoulearFrameAssembler {
+internal class SoulearFrameAssembler(
+    private val maxFrameBytes: Int = DEFAULT_MAX_FRAME_BYTES,
+    private val maxFrameChunks: Int = DEFAULT_MAX_FRAME_CHUNKS,
+    private val onFrameRejected: (String) -> Unit = {}
+) {
     private var currentFrameId: Int? = null
     private var currentWidth = 0
     private var currentHeight = 0
     private var expectedSequence: Int? = null
     private var frameIsComplete = true
     private var finalChunkMarker = 0
+    private var frameBytes = 0
     private val chunks = mutableListOf<ByteArray>()
+
+    init {
+        require(maxFrameBytes > 0) { "Maximum frame size must be positive" }
+        require(maxFrameChunks > 0) { "Maximum frame chunk count must be positive" }
+    }
 
     fun accept(chunk: SoulearProtocol.VideoChunk): Frame? {
         val completed = if (currentFrameId != null && chunk.frameId != currentFrameId) {
@@ -22,7 +32,7 @@ internal class SoulearFrameAssembler {
         if (currentFrameId != chunk.frameId) {
             beginFrame(chunk)
         }
-        appendChunk(chunk)
+        if (!appendChunk(chunk)) return completed
 
         return completed ?: if (chunk.lastChunk && chunk.jpegPayload.endsWithJpegMarker()) {
             finishCurrentFrame().also {
@@ -41,6 +51,7 @@ internal class SoulearFrameAssembler {
         expectedSequence = null
         frameIsComplete = true
         finalChunkMarker = 0
+        frameBytes = 0
         chunks.clear()
     }
 
@@ -51,16 +62,31 @@ internal class SoulearFrameAssembler {
         expectedSequence = null
         frameIsComplete = true
         finalChunkMarker = 0
+        frameBytes = 0
         chunks.clear()
     }
 
-    private fun appendChunk(chunk: SoulearProtocol.VideoChunk) {
+    private fun appendChunk(chunk: SoulearProtocol.VideoChunk): Boolean {
+        val rejectionReason = when {
+            chunks.size >= maxFrameChunks -> "more than $maxFrameChunks chunks"
+            chunk.jpegPayload.size > maxFrameBytes - frameBytes -> "more than $maxFrameBytes bytes"
+            else -> null
+        }
+        if (rejectionReason != null) {
+            val rejectedFrameId = currentFrameId
+            reset()
+            onFrameRejected("Dropping MJPEG frame $rejectedFrameId: $rejectionReason")
+            return false
+        }
+
         expectedSequence?.let { expected ->
             if (chunk.sequence != expected) frameIsComplete = false
         }
         expectedSequence = (chunk.sequence + 1) and 0xff
         finalChunkMarker = chunk.chunkMarker
+        frameBytes += chunk.jpegPayload.size
         chunks += chunk.jpegPayload
+        return true
     }
 
     private fun finishCurrentFrame(): Frame? {
@@ -94,6 +120,8 @@ internal class SoulearFrameAssembler {
     data class Frame(val jpeg: ByteArray, val width: Int, val height: Int)
 
     companion object {
+        private const val DEFAULT_MAX_FRAME_BYTES = 8 * 1024 * 1024
+        private const val DEFAULT_MAX_FRAME_CHUNKS = 255
         private const val JPEG_MARKER: Byte = 0xff.toByte()
         private const val JPEG_START: Byte = 0xd8.toByte()
         private const val JPEG_END: Byte = 0xd9.toByte()
