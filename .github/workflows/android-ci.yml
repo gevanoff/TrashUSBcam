@@ -1,0 +1,43 @@
+name: Android build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: JDK ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [17, 21]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install JDK 17 compiler toolchain
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Select Gradle runtime
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Set up Gradle and validate wrappers
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Verify Gradle runtime
+        run: ./gradlew --version
+
+      - name: Test, lint, and assemble
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace

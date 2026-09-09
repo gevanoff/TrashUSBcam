@@ -16,29 +16,15 @@ TrashUSBcam is a practical Android viewer for inexpensive UVC USB cameras, inclu
 
 ## Build environment
 
-The current project uses Android Gradle Plugin 8.7.3, Gradle 8.9, Kotlin 2.0.21, and Java 17 source/bytecode targets.
+The Android build uses Android Gradle Plugin 9.3.1 and the committed Gradle 9.6.0 wrapper.
 
-- Use JDK 17 for the current build stack.
-- Gradle 8.9 does not support running under Java 26; do not claim Java 26 compatibility until the build-system modernization is completed and validated.
-- Use the committed Gradle wrapper rather than a system Gradle installation.
-
-Run the principal validation from the repository root:
-
-```shell
-./gradlew testDebugUnitTest assembleDebug --stacktrace
-```
-
-Windows PowerShell:
-
-```powershell
-.\gradlew.bat testDebugUnitTest assembleDebug --stacktrace
-```
-
-The debug APK is produced at:
-
-```text
-app/build/outputs/apk/debug/app-debug.apk
-```
+- Use JDK 21 for everyday Gradle builds; JDK 17 remains supported and tested in CI.
+- Java compilation and unit tests use an explicit JDK 17 toolchain. The Foojay resolver provisions it when absent.
+- Java source compatibility and Java/Kotlin bytecode targets remain at 17.
+- Use the committed wrapper rather than a system Gradle installation.
+- Run `testDebugUnitTest lintDebug assembleDebug --stacktrace` for build validation.
+- See [BUILDING.md](BUILDING.md) for local setup, CI, and troubleshooting.
+- Use AGP's built-in Kotlin support; do not add `org.jetbrains.kotlin.android` or `android.kotlinOptions`.
 
 ## Repository layout
 
