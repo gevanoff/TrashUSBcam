@@ -16,7 +16,7 @@ TrashUSBcam is a practical Android viewer for inexpensive UVC USB cameras, inclu
 
 ## Build environment
 
-The Android build uses Android Gradle Plugin 9.3.1 and the committed Gradle 9.6.0 wrapper.
+The Android build uses Android Gradle Plugin 9.3.2 and the committed Gradle 9.6.0 wrapper.
 
 - Use JDK 21 for everyday Gradle builds; JDK 17 remains supported and tested in CI.
 - Java compilation and unit tests use an explicit JDK 17 toolchain. The Foojay resolver provisions it when absent.

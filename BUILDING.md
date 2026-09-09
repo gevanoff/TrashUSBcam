@@ -2,7 +2,7 @@
 
 ## Shared build policy
 
-- Android Gradle Plugin **9.3.1** and Gradle **9.6.0**.
+- Android Gradle Plugin **9.3.2** and Gradle **9.6.0**.
 - **JDK 21** is the normal Gradle runtime. CI validates Gradle on JDK 17 and 21.
 - Compilation and JVM unit tests use an explicit **JDK 17 toolchain**. Java/Kotlin bytecode targets remain **17**.
 - The pinned Foojay toolchain resolver downloads a suitable JDK 17 on the first build if none is installed. Set up JDK 17 in advance for offline builds.

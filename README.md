@@ -27,7 +27,7 @@ TrashUSBcam uses the [AndroidUSBCamera (AUSBC)](https://github.com/jiangdongguo/
 
 ## Building
 
-The build uses AGP **9.3.1** with built-in Kotlin, Gradle **9.6.0**, a **JDK 21** runtime, and an explicit **JDK 17** compiler toolchain. See [BUILDING.md](BUILDING.md) for setup, CI, and validation.
+The build uses AGP **9.3.2** with built-in Kotlin, Gradle **9.6.0**, a **JDK 21** runtime, and an explicit **JDK 17** compiler toolchain. See [BUILDING.md](BUILDING.md) for setup, CI, and validation.
 
 ```
 ./gradlew testDebugUnitTest lintDebug assembleDebug
