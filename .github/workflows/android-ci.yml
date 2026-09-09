@@ -21,6 +21,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
       - name: Install JDK 17 compiler toolchain
         uses: actions/setup-java@v5
         with:
@@ -33,7 +36,7 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
 
-      - name: Set up Gradle and validate wrappers
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
       - name: Verify Gradle runtime

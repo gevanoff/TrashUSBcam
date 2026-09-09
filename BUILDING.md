@@ -33,7 +33,7 @@ On Linux/macOS, set `JAVA_HOME` to a JDK 21 installation, then run:
 
 The APK is under `app/build/outputs/apk/debug/` relative to the Gradle project. Lint reports are under `app/build/reports/`; JVM test reports are under `app/build/reports/tests/`.
 
-CI uses the same wrapper and validation tasks, with a preinstalled JDK 17 compiler and a matrix of Gradle runtimes. Gradle setup validates wrapper JARs; the wrapper properties validate the downloaded distribution.
+CI uses the same wrapper and validation tasks, with a preinstalled JDK 17 compiler and a matrix of Gradle runtimes. Gradle's dedicated wrapper-validation action verifies the committed wrapper JAR before it runs; the wrapper's pinned distribution checksum verifies the downloaded Gradle distribution.
 
 To investigate deprecation warnings, add `--warning-mode all` to the validation command. Resolve the reported source before upgrading to another major Gradle version.
 
