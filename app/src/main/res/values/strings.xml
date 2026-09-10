@@ -1,11 +1,21 @@
 <resources>
     <string name="app_name">TrashUSBcam</string>
     <string name="camera_disconnected">Connect a USB camera to begin</string>
+    <string name="camera_disconnected_with_wifi">Connect a USB or compatible Wi-Fi camera\n%1$s</string>
+    <string name="soulear_searching">Looking for USB or Wi-Fi cameras…</string>
+    <string name="soulear_detected">Wi-Fi camera %1$s detected at %2$s\nOpening video…</string>
+    <string name="soulear_stream_starting">Opening Wi-Fi camera video on local UDP port %1$d…</string>
+    <string name="soulear_stream_error">Wi-Fi camera video unavailable: %1$s</string>
+    <string name="soulear_preview">Wi-Fi camera preview</string>
+    <string name="wifi_camera_generic">Wi-Fi camera</string>
+    <string name="wifi_camera_picker_title">Select Wi-Fi camera</string>
+    <string name="wifi_camera_picker_current">Wi-Fi: %1$s ▾</string>
+    <string name="wifi_camera_picker_description">Select Wi-Fi camera; currently %1$s</string>
     <string name="camera_error">Camera error: %s</string>
     <string name="error_unknown">unknown error</string>
     <string name="permission_required">Camera permission is required to view USB camera</string>
     <string name="audio_permission_required">Microphone permission is required to record video</string>
-    <string name="camera_not_ready">No USB camera is active</string>
+    <string name="camera_not_ready">No camera is active</string>
     <string name="capture_photo">Take photo</string>
     <string name="capture_preview">Capture preview</string>
     <string name="start_recording">Start recording</string>
