@@ -27,8 +27,10 @@ TrashUSBcam uses the [AndroidUSBCamera (AUSBC)](https://github.com/jiangdongguo/
 
 ## Building
 
+The build uses AGP **9.3.2** with built-in Kotlin, Gradle **9.6.0**, a **JDK 21** runtime, and an explicit **JDK 17** compiler toolchain. See [BUILDING.md](BUILDING.md) for setup, CI, and validation.
+
 ```
-./gradlew assembleDebug
+./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
 On this Windows machine, Gradle can use Android Studio's bundled JDK:
@@ -37,7 +39,7 @@ On this Windows machine, Gradle can use Android Studio's bundled JDK:
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
-.\gradlew.bat assembleDebug
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
 
 The resulting APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
