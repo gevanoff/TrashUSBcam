@@ -4,6 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PreviewOrientationTest {
+    @Test fun legacyHalfTurnKeepsUpsideDownCorrection() {
+        assertEquals(2, PreviewOrientation.legacyQuarterTurns(true))
+        assertEquals(0, PreviewOrientation.legacyQuarterTurns(false))
+    }
+
     @Test fun squareFrameRetainsFullHeightAtEveryAngle() {
         for (turn in 0..3) assertEquals(1f, PreviewOrientation.fitScale(720f, 720f, 1280f, 720f, turn), 0.0001f)
     }

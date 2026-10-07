@@ -172,6 +172,18 @@ class UsbCameraFragment : CameraFragment() {
         super.initData()
         setupGallery()
         val previewPreferences = requireContext().getSharedPreferences(PREVIEW_PREFERENCES, Context.MODE_PRIVATE)
+        // The released Flip setting was a half-turn. Preserve that orientation on upgrade.
+        if (!previewPreferences.contains(KEY_PREVIEW_MIRRORED) &&
+            !previewPreferences.contains(KEY_PREVIEW_QUARTER_TURNS)) {
+            val migratedTurns = PreviewOrientation.legacyQuarterTurns(
+                previewPreferences.getBoolean(KEY_LEGACY_FLIPPED, false)
+            )
+            previewPreferences.edit()
+                .putBoolean(KEY_PREVIEW_MIRRORED, false)
+                .putInt(KEY_PREVIEW_QUARTER_TURNS, migratedTurns)
+                .remove(KEY_LEGACY_FLIPPED)
+                .apply()
+        }
         isPreviewFlipped = previewPreferences.getBoolean(KEY_PREVIEW_MIRRORED, false)
         previewQuarterTurns = previewPreferences.getInt(KEY_PREVIEW_QUARTER_TURNS, 0).mod(4)
         binding?.cameraContainer?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
@@ -1208,6 +1220,7 @@ class UsbCameraFragment : CameraFragment() {
     companion object {
         const val TAG = "UsbCameraFragment"
         private const val PREVIEW_PREFERENCES = "preview"
+        private const val KEY_LEGACY_FLIPPED = "flipped_180"
         private const val KEY_PREVIEW_MIRRORED = "mirrored_horizontal"
         private const val KEY_PREVIEW_QUARTER_TURNS = "quarter_turns"
         private const val PREVIEW_WIDTH = 1280
