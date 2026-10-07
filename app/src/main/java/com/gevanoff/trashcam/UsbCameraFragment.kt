@@ -71,6 +71,7 @@ class UsbCameraFragment : CameraFragment() {
     private var binding: FragmentCameraBinding? = null
     private var cameraTextureView: AspectRatioTextureView? = null
     private var isPreviewFlipped = false
+    private var previewQuarterTurns = 0
     private var isPhotoCapturing = false
     private var isRecording = false
     private var pendingVideoStart = false
@@ -169,7 +170,19 @@ class UsbCameraFragment : CameraFragment() {
         setupGallery()
         val previewPreferences = requireContext().getSharedPreferences(PREVIEW_PREFERENCES, Context.MODE_PRIVATE)
         isPreviewFlipped = previewPreferences.getBoolean(KEY_PREVIEW_FLIPPED, false)
+        previewQuarterTurns = previewPreferences.getInt(KEY_PREVIEW_QUARTER_TURNS, 0).mod(4)
+        binding?.cameraContainer?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyPreviewOrientation()
+        }
+        binding?.soulearPreview?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyPreviewOrientation()
+        }
         applyPreviewOrientation()
+        binding?.rotateViewButton?.setOnClickListener {
+            previewQuarterTurns = (previewQuarterTurns + 1) % 4
+            previewPreferences.edit().putInt(KEY_PREVIEW_QUARTER_TURNS, previewQuarterTurns).apply()
+            applyPreviewOrientation()
+        }
         binding?.flipViewButton?.setOnClickListener {
             isPreviewFlipped = !isPreviewFlipped
             previewPreferences.edit().putBoolean(KEY_PREVIEW_FLIPPED, isPreviewFlipped).apply()
@@ -198,13 +211,21 @@ class UsbCameraFragment : CameraFragment() {
 
     private fun applyPreviewOrientation() {
         val views = binding ?: return
-        val angle = if (isPreviewFlipped) 180f else 0f
+        val angle = ((previewQuarterTurns * 90 + if (isPreviewFlipped) 180 else 0) % 360).toFloat()
         // Rotate only the live preview layers. Keep controls, gallery, and capture data unchanged.
         // Transform the USB container so replacement preview surfaces inherit the orientation.
-        views.cameraContainer.rotation = angle
-        views.soulearPreview.rotation = angle
+        for (preview in listOf(views.cameraContainer, views.soulearPreview)) {
+            preview.rotation = angle
+            // Quarter turns swap the bounds: shrink uniformly to fit without clipping or stretching.
+            val scale = if (previewQuarterTurns % 2 != 0 && preview.width > 0 && preview.height > 0) {
+                minOf(preview.width.toFloat() / preview.height, preview.height.toFloat() / preview.width)
+            } else 1f
+            preview.scaleX = scale
+            preview.scaleY = scale
+        }
+        views.rotateViewButton.contentDescription = getString(R.string.rotate_view_description, angle.toInt())
         views.flipViewButton.apply {
-            isChecked = isPreviewFlipped
+            isSelected = isPreviewFlipped
             contentDescription = getString(
                 if (isPreviewFlipped) R.string.restore_view_description else R.string.flip_view_description
             )
@@ -1170,6 +1191,7 @@ class UsbCameraFragment : CameraFragment() {
         const val TAG = "UsbCameraFragment"
         private const val PREVIEW_PREFERENCES = "preview"
         private const val KEY_PREVIEW_FLIPPED = "flipped_180"
+        private const val KEY_PREVIEW_QUARTER_TURNS = "quarter_turns"
         private const val PREVIEW_WIDTH = 1280
         private const val PREVIEW_HEIGHT = 720
         private const val MEDIA_DIRECTORY = "TrashUSBcam"
