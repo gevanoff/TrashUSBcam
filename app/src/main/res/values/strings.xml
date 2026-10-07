@@ -38,4 +38,20 @@
     <string name="photo_saved">Photo saved to Pictures/TrashUSBcam</string>
     <string name="video_saved">Video saved to Movies/TrashUSBcam</string>
     <string name="capture_failed">Capture failed: %s</string>
+    <string name="wifi_camera_settings">Wi-Fi camera settings</string>
+    <string name="wifi_camera_setup_help">Remember the camera’s exact Wi-Fi name and security type. Android asks for connection approval. Video starts when the camera responds. Camera traffic uses Wi-Fi; internet remains on Android’s default connection, normally cellular when camera Wi-Fi has no internet. Mobile data must be enabled.</string>
+    <string name="wifi_camera_ssid">Camera Wi-Fi name (SSID)</string>
+    <string name="wifi_camera_password">Wi-Fi password</string>
+    <string name="wifi_camera_security_label">Wi-Fi security</string>
+    <string name="wifi_camera_auto_connect">Connect automatically when opened</string>
+    <string name="wifi_camera_save_connect">Save and connect</string>
+    <string name="wifi_camera_forget">Forget camera</string>
+    <string name="wifi_camera_retry">Retry saved camera</string>
+    <string name="wifi_camera_cancel_connection">Cancel saved connection</string>
+    <string name="wifi_camera_old_android">Automatic Wi-Fi connection requires Android 10 or newer. Connect using Android Wi-Fi settings; preview starts automatically when the camera responds.</string>
+    <string-array name="wifi_camera_security">
+        <item>Open (no password)</item>
+        <item>WPA2 Personal</item>
+        <item>WPA3 Personal</item>
+    </string-array>
 </resources>
