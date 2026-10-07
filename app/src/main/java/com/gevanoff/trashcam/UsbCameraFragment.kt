@@ -71,6 +71,9 @@ class UsbCameraFragment : CameraFragment() {
     private var binding: FragmentCameraBinding? = null
     private var cameraTextureView: AspectRatioTextureView? = null
     private var liveShare: LiveShareControls? = null
+    private var liveUsbTimestamp = -1L
+    private var liveUsbChangedAt = 0L
+    private var liveWifiFrameAt = 0L
     private var isPreviewFlipped = false
     private var previewQuarterTurns = 0
     private var isPhotoCapturing = false
@@ -236,6 +239,15 @@ class UsbCameraFragment : CameraFragment() {
         val usb = isCameraOpened()
         val texture = cameraTextureView
         val wifi = soulearDisplayedBitmap
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (usb) {
+            val timestamp = texture?.surfaceTexture?.timestamp ?: return null
+            if (timestamp != liveUsbTimestamp) {
+                liveUsbTimestamp = timestamp
+                liveUsbChangedAt = now
+            }
+            if (now - liveUsbChangedAt > 2000) return null
+        } else if (now - liveWifiFrameAt > 2000) return null
         val width = if (usb) texture?.width ?: 0 else if (soulearStreaming) wifi?.width ?: 0 else 0
         val height = if (usb) texture?.height ?: 0 else if (soulearStreaming) wifi?.height ?: 0 else 0
         if (width < 2 || height < 2) return null
@@ -513,6 +525,7 @@ class UsbCameraFragment : CameraFragment() {
         soulearRetiredBitmap?.recycle()
         soulearRetiredBitmap = soulearDisplayedBitmap
         soulearDisplayedBitmap = bitmap
+        liveWifiFrameAt = android.os.SystemClock.elapsedRealtime()
         soulearStreaming = true
         currentBinding.soulearPreview.setImageBitmap(bitmap)
         applyPreviewOrientation()

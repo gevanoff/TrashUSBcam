@@ -4,7 +4,7 @@ One Android publisher → one browser viewer, video only. The Android Share menu
 
 ## Run the service
 
-Requires Node 22+ (CI uses 24). There are no npm dependencies. Generate two different random secrets, one for publisher authorization and one shared with coturn:
+Requires Node 22+ (CI uses 24). There are no runtime npm dependencies. Playwright is a pinned development dependency for the browser media smoke test. Generate two different random secrets, one for publisher authorization and one shared with coturn:
 
 ```bash
 openssl rand -hex 32
@@ -69,10 +69,13 @@ Android sends frames with a longest edge of 640 pixels at approximately 6 fps, u
 ```bash
 node --test streaming/server.test.mjs
 node --check streaming/public/viewer.js
+npm ci --prefix streaming
+npx --prefix streaming playwright install chromium
+node streaming/browser-smoke.cjs
 ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
 ```
 
-Tests cover publisher authentication, a single viewer claim, role separation, offer/answer exchange, pause, revocation, expiry, abandoned sessions, request size limits, TURN credential issuance, and video color conversion. CI publishes the APK and Android reports.
+Tests cover publisher authentication, a single viewer claim, role separation, offer/answer exchange, pause, revocation, expiry, abandoned sessions, request size limits, TURN credential issuance, and video color conversion. The Chromium smoke test connects a synthetic video publisher to the actual viewer, checks decoded colors, rejects a second viewer, and verifies pause/resume and revocation. CI publishes the APK and Android reports.
 
 Physical acceptance testing remains required:
 
