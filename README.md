@@ -13,6 +13,7 @@ TrashUSBcam uses the [AndroidUSBCamera (AUSBC)](https://github.com/jiangdongguo/
 - Collects compatible Wi-Fi discovery results and offers a camera picker when more than one candidate is available
 - Reassembles and displays the Soulear camera's chunked MJPEG stream
 - Displays live video preview in landscape orientation
+- **Flip view** rotates the live USB or Wi-Fi preview 180° for an upside-down camera; tap **Restore view** to undo it. The setting is remembered across reconnects and app restarts. Saved photos and videos retain the original camera orientation.
 - Full-screen camera view with aspect-ratio-correct rendering using OpenGL ES
 - Status overlay shows connection / error state when no camera is active
 - Targets 1280×720 preview resolution (falls back to lower if the camera does not support it)
