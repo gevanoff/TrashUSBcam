@@ -84,3 +84,13 @@ test('viewer assets have no third party scripts and suppress referrers/caching',
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.match(await response.text(), /Watch live/);
 });
+
+test('absolute expiry wins even while publisher keeps heartbeating', async t => {
+  let clock = 0;
+  const { api, create } = await fixture(t, { now: () => clock, ttl: 2000, idle: 10000 });
+  const s = await create(), path = `/api/sessions/${s.id}`;
+  clock = 1900;
+  assert.equal((await api(path + '/host', 'PUT', s.publisherToken, { active: true })).code, 200);
+  clock = 2000;
+  assert.equal((await api(path, 'GET', s.publisherToken)).code, 404);
+});

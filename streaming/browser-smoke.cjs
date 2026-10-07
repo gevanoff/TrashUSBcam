@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Real browser-to-browser media test of the viewer, using a synthetic publisher.
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');

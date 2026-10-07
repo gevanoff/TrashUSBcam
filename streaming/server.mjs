@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import http from 'node:http';
 import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
