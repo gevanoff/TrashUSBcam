@@ -70,6 +70,7 @@ class UsbCameraFragment : CameraFragment() {
 
     private var binding: FragmentCameraBinding? = null
     private var cameraTextureView: AspectRatioTextureView? = null
+    private var isPreviewFlipped = false
     private var isPhotoCapturing = false
     private var isRecording = false
     private var pendingVideoStart = false
@@ -166,6 +167,14 @@ class UsbCameraFragment : CameraFragment() {
     override fun initData() {
         super.initData()
         setupGallery()
+        val previewPreferences = requireContext().getSharedPreferences(PREVIEW_PREFERENCES, Context.MODE_PRIVATE)
+        isPreviewFlipped = previewPreferences.getBoolean(KEY_PREVIEW_FLIPPED, false)
+        applyPreviewOrientation()
+        binding?.flipViewButton?.setOnClickListener {
+            isPreviewFlipped = !isPreviewFlipped
+            previewPreferences.edit().putBoolean(KEY_PREVIEW_FLIPPED, isPreviewFlipped).apply()
+            applyPreviewOrientation()
+        }
         binding?.capturePhotoButton?.setOnClickListener { capturePhoto() }
         binding?.captureVideoButton?.setOnClickListener { toggleVideoRecording() }
         binding?.wifiCameraPicker?.setOnClickListener { showWifiCameraPicker() }
@@ -186,6 +195,21 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     // --- Camera state helpers ---
+
+    private fun applyPreviewOrientation() {
+        val views = binding ?: return
+        val angle = if (isPreviewFlipped) 180f else 0f
+        // Rotate only the live preview layers. Keep controls, gallery, and capture data unchanged.
+        // Transform the USB container so replacement preview surfaces inherit the orientation.
+        views.cameraContainer.rotation = angle
+        views.soulearPreview.rotation = angle
+        views.flipViewButton.apply {
+            isChecked = isPreviewFlipped
+            contentDescription = getString(
+                if (isPreviewFlipped) R.string.restore_view_description else R.string.flip_view_description
+            )
+        }
+    }
 
     private fun onCameraOpened() {
         binding?.soulearPreview?.visibility = View.GONE
@@ -1144,6 +1168,8 @@ class UsbCameraFragment : CameraFragment() {
 
     companion object {
         const val TAG = "UsbCameraFragment"
+        private const val PREVIEW_PREFERENCES = "preview"
+        private const val KEY_PREVIEW_FLIPPED = "flipped_180"
         private const val PREVIEW_WIDTH = 1280
         private const val PREVIEW_HEIGHT = 720
         private const val MEDIA_DIRECTORY = "TrashUSBcam"
