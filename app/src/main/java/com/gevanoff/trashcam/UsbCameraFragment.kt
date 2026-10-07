@@ -71,6 +71,7 @@ class UsbCameraFragment : CameraFragment() {
     private var binding: FragmentCameraBinding? = null
     private var cameraTextureView: AspectRatioTextureView? = null
     private var isPreviewFlipped = false
+    private var previewQuarterTurns = 0
     private var isPhotoCapturing = false
     private var isRecording = false
     private var pendingVideoStart = false
@@ -134,7 +135,10 @@ class UsbCameraFragment : CameraFragment() {
 
     /** Camera preview surface – created programmatically so the library can manage it. */
     override fun getCameraView(): IAspectRatio {
-        return AspectRatioTextureView(requireContext()).also { cameraTextureView = it }
+        return AspectRatioTextureView(requireContext()).also {
+            cameraTextureView = it
+            it.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyPreviewOrientation() }
+        }
     }
 
     /** Container into which the library inserts the preview surface. */
@@ -168,11 +172,35 @@ class UsbCameraFragment : CameraFragment() {
         super.initData()
         setupGallery()
         val previewPreferences = requireContext().getSharedPreferences(PREVIEW_PREFERENCES, Context.MODE_PRIVATE)
-        isPreviewFlipped = previewPreferences.getBoolean(KEY_PREVIEW_FLIPPED, false)
+        // The released Flip setting was a half-turn. Preserve that orientation on upgrade.
+        if (!previewPreferences.contains(KEY_PREVIEW_MIRRORED) &&
+            !previewPreferences.contains(KEY_PREVIEW_QUARTER_TURNS)) {
+            val migratedTurns = PreviewOrientation.legacyQuarterTurns(
+                previewPreferences.getBoolean(KEY_LEGACY_FLIPPED, false)
+            )
+            previewPreferences.edit()
+                .putBoolean(KEY_PREVIEW_MIRRORED, false)
+                .putInt(KEY_PREVIEW_QUARTER_TURNS, migratedTurns)
+                .remove(KEY_LEGACY_FLIPPED)
+                .apply()
+        }
+        isPreviewFlipped = previewPreferences.getBoolean(KEY_PREVIEW_MIRRORED, false)
+        previewQuarterTurns = previewPreferences.getInt(KEY_PREVIEW_QUARTER_TURNS, 0).mod(4)
+        binding?.cameraContainer?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyPreviewOrientation()
+        }
+        binding?.soulearPreview?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyPreviewOrientation()
+        }
         applyPreviewOrientation()
+        binding?.rotateViewButton?.setOnClickListener {
+            previewQuarterTurns = (previewQuarterTurns + 1) % 4
+            previewPreferences.edit().putInt(KEY_PREVIEW_QUARTER_TURNS, previewQuarterTurns).apply()
+            applyPreviewOrientation()
+        }
         binding?.flipViewButton?.setOnClickListener {
             isPreviewFlipped = !isPreviewFlipped
-            previewPreferences.edit().putBoolean(KEY_PREVIEW_FLIPPED, isPreviewFlipped).apply()
+            previewPreferences.edit().putBoolean(KEY_PREVIEW_MIRRORED, isPreviewFlipped).apply()
             applyPreviewOrientation()
         }
         binding?.capturePhotoButton?.setOnClickListener { capturePhoto() }
@@ -198,13 +226,35 @@ class UsbCameraFragment : CameraFragment() {
 
     private fun applyPreviewOrientation() {
         val views = binding ?: return
-        val angle = if (isPreviewFlipped) 180f else 0f
-        // Rotate only the live preview layers. Keep controls, gallery, and capture data unchanged.
-        // Transform the USB container so replacement preview surfaces inherit the orientation.
-        views.cameraContainer.rotation = angle
-        views.soulearPreview.rotation = angle
+        val angle = (previewQuarterTurns * 90).toFloat()
+        // Android applies local scale before rotation. At odd quarter turns, negating Y
+        // produces the requested left-right reflection in displayed (screen) coordinates.
+        fun transform(preview: View, scale: Float) {
+            preview.rotation = angle
+            preview.scaleX = scale * if (isPreviewFlipped && previewQuarterTurns % 2 == 0) -1f else 1f
+            preview.scaleY = scale * if (isPreviewFlipped && previewQuarterTurns % 2 != 0) -1f else 1f
+        }
+        cameraTextureView?.let { preview ->
+            val scale = PreviewOrientation.fitScale(
+                preview.width.toFloat(), preview.height.toFloat(),
+                views.cameraContainer.width.toFloat(), views.cameraContainer.height.toFloat(),
+                previewQuarterTurns
+            )
+            transform(preview, scale)
+        }
+        val image = views.soulearPreview
+        val drawable = image.drawable
+        val scale = if (drawable != null && drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0 && image.width > 0 && image.height > 0) {
+            val frameWidth = drawable.intrinsicWidth.toFloat()
+            val frameHeight = drawable.intrinsicHeight.toFloat()
+            val originalFit = minOf(image.width / frameWidth, image.height / frameHeight)
+            PreviewOrientation.fitScale(frameWidth * originalFit, frameHeight * originalFit,
+                image.width.toFloat(), image.height.toFloat(), previewQuarterTurns)
+        } else 1f
+        transform(image, scale)
+        views.rotateViewButton.contentDescription = getString(R.string.rotate_view_description, angle.toInt())
         views.flipViewButton.apply {
-            isChecked = isPreviewFlipped
+            isSelected = isPreviewFlipped
             contentDescription = getString(
                 if (isPreviewFlipped) R.string.restore_view_description else R.string.flip_view_description
             )
@@ -212,7 +262,7 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     private fun onCameraOpened() {
-        binding?.soulearPreview?.visibility = View.GONE
+        binding?.soulearPreviewLayer?.visibility = View.GONE
         binding?.statusText?.visibility = View.GONE
         refreshCaptureControls()
     }
@@ -222,7 +272,7 @@ class UsbCameraFragment : CameraFragment() {
             stopVideoRecording()
         }
         if (soulearStreaming && soulearDisplayedBitmap != null) {
-            binding?.soulearPreview?.visibility = View.VISIBLE
+            binding?.soulearPreviewLayer?.visibility = View.VISIBLE
             binding?.statusText?.visibility = View.GONE
         } else {
             binding?.statusText?.apply {
@@ -436,7 +486,8 @@ class UsbCameraFragment : CameraFragment() {
         soulearDisplayedBitmap = bitmap
         soulearStreaming = true
         currentBinding.soulearPreview.setImageBitmap(bitmap)
-        currentBinding.soulearPreview.visibility = if (isCameraOpened()) View.GONE else View.VISIBLE
+        applyPreviewOrientation()
+        currentBinding.soulearPreviewLayer.visibility = if (isCameraOpened()) View.GONE else View.VISIBLE
         if (!isCameraOpened()) currentBinding.statusText.visibility = View.GONE
         refreshCaptureControls()
     }
@@ -455,7 +506,7 @@ class UsbCameraFragment : CameraFragment() {
             soulearRetiredBitmap?.recycle()
             soulearDisplayedBitmap = null
             soulearRetiredBitmap = null
-            binding?.soulearPreview?.visibility = View.GONE
+            binding?.soulearPreviewLayer?.visibility = View.GONE
         }
         refreshCaptureControls()
     }
@@ -1169,7 +1220,9 @@ class UsbCameraFragment : CameraFragment() {
     companion object {
         const val TAG = "UsbCameraFragment"
         private const val PREVIEW_PREFERENCES = "preview"
-        private const val KEY_PREVIEW_FLIPPED = "flipped_180"
+        private const val KEY_LEGACY_FLIPPED = "flipped_180"
+        private const val KEY_PREVIEW_MIRRORED = "mirrored_horizontal"
+        private const val KEY_PREVIEW_QUARTER_TURNS = "quarter_turns"
         private const val PREVIEW_WIDTH = 1280
         private const val PREVIEW_HEIGHT = 720
         private const val MEDIA_DIRECTORY = "TrashUSBcam"
