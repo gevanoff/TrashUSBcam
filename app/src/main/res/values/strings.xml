@@ -19,8 +19,8 @@
     <string name="capture_photo">Take photo</string>
     <string name="rotate_view">Rotate live view clockwise 90 degrees</string>
     <string name="rotate_view_description">Rotate live view clockwise 90 degrees; currently %1$d degrees; saved captures are unchanged</string>
-    <string name="flip_view_description">Rotate live view 180 degrees; saved captures are unchanged</string>
-    <string name="restore_view_description">Restore live view to normal orientation; saved captures are unchanged</string>
+    <string name="flip_view_description">Mirror live view left to right; saved captures are unchanged</string>
+    <string name="restore_view_description">Remove left-right mirroring; keep current rotation; saved captures are unchanged</string>
     <string name="capture_preview">Capture preview</string>
     <string name="start_recording">Start recording</string>
     <string name="stop_recording">Stop recording</string>
