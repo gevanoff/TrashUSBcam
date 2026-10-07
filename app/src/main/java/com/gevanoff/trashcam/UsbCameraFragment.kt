@@ -250,7 +250,7 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     private fun onCameraOpened() {
-        binding?.soulearPreview?.visibility = View.GONE
+        binding?.soulearPreviewLayer?.visibility = View.GONE
         binding?.statusText?.visibility = View.GONE
         refreshCaptureControls()
     }
@@ -260,7 +260,7 @@ class UsbCameraFragment : CameraFragment() {
             stopVideoRecording()
         }
         if (soulearStreaming && soulearDisplayedBitmap != null) {
-            binding?.soulearPreview?.visibility = View.VISIBLE
+            binding?.soulearPreviewLayer?.visibility = View.VISIBLE
             binding?.statusText?.visibility = View.GONE
         } else {
             binding?.statusText?.apply {
@@ -475,7 +475,7 @@ class UsbCameraFragment : CameraFragment() {
         soulearStreaming = true
         currentBinding.soulearPreview.setImageBitmap(bitmap)
         applyPreviewOrientation()
-        currentBinding.soulearPreview.visibility = if (isCameraOpened()) View.GONE else View.VISIBLE
+        currentBinding.soulearPreviewLayer.visibility = if (isCameraOpened()) View.GONE else View.VISIBLE
         if (!isCameraOpened()) currentBinding.statusText.visibility = View.GONE
         refreshCaptureControls()
     }
@@ -494,7 +494,7 @@ class UsbCameraFragment : CameraFragment() {
             soulearRetiredBitmap?.recycle()
             soulearDisplayedBitmap = null
             soulearRetiredBitmap = null
-            binding?.soulearPreview?.visibility = View.GONE
+            binding?.soulearPreviewLayer?.visibility = View.GONE
         }
         refreshCaptureControls()
     }
