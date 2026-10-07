@@ -87,3 +87,7 @@ The Soulear implementation uses Android's standard networking and bitmap APIs pl
 - The app targets SDK 35. AUSBC v3.2.7 uses legacy dynamic receiver registration, so the app wraps the AUSBC context and supplies `RECEIVER_NOT_EXPORTED` on Android 13+.
 - The APK is filtered to `armeabi-v7a` and `arm64-v8a` because AUSBC's UVC native libraries are ARM-only. Physical Android phones should be fine; x86-only emulators are not supported.
 - Verified Soulear hardware: `YPC BK7231U-XRH-FBPRO`, firmware `HFNVB10B`, SSID `Soulear-394b3`. Its UDP header advertises 640×480 while its MJPEG images decode to 480×480; the preview follows the decoded image dimensions.
+
+### Experimental live sharing
+
+The preview's share symbol creates a one-viewer, video-only browser link that can be sent through Android's share menu. Rotation and reflection are included. Sharing pauses outside TrashUSBcam and stops when the camera screen is destroyed. This requires your own HTTPS signaling service and a TURN relay for dependable internet access. See [setup, limitations, and testing](streaming/README.md).
