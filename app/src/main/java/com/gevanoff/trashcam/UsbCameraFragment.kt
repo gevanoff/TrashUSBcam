@@ -16,6 +16,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.net.Network
+import android.net.LinkProperties
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -28,12 +30,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.MediaController
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.gevanoff.trashcam.databinding.FragmentCameraBinding
 import com.jiangdg.ausbc.CameraClient
@@ -78,6 +82,25 @@ class UsbCameraFragment : CameraFragment() {
     private var mediaAdapter: MediaThumbnailAdapter? = null
     private var selectedGalleryItem: GalleryItem? = null
     private var pendingDeleteItem: GalleryItem? = null
+    private var wifiConnection: WifiCameraConnection? = null
+    private val wifiSession by lazy {
+        ViewModelProvider(requireActivity())[WifiCameraSession::class.java]
+    }
+    private val wifiAttemptPolicy: WifiCameraAttemptPolicy
+        get() = wifiSession.attemptPolicy
+    private var wifiPermissionPending = false
+    private val wifiPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        wifiPermissionPending = false
+        if (Build.VERSION.SDK_INT >= 29) {
+            if (hasWifiConnectionPermission()) connectSavedWifiCamera(automatic = false)
+            else {
+                wifiAttemptPolicy.failed()
+                showToast("Wi-Fi connection permission denied. Manual Wi-Fi connection still works.")
+            }
+        }
+    }
     private var soulearDiscoveryClient: SoulearDiscoveryClient? = null
     private var soulearVideoClient: SoulearVideoClient? = null
     @Volatile private var soulearRecorder: SoulearMp4Recorder? = null
@@ -373,15 +396,29 @@ class UsbCameraFragment : CameraFragment() {
 
     private fun showWifiCameraPicker() {
         val snapshot = wifiCameraCollection.snapshot()
-        if (snapshot.cameras.size < 2) return
         val selectedIndex = snapshot.cameras.indexOfFirst { it.id == snapshot.selectedId }
-        val labels = snapshot.cameras.map { it.pickerLabel }.toTypedArray()
+        val actions = listOf(getString(R.string.wifi_camera_settings),
+            getString(R.string.wifi_camera_retry), getString(R.string.wifi_camera_cancel_connection))
+        val labels = (snapshot.cameras.map { it.pickerLabel } + actions).toTypedArray()
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.wifi_camera_picker_title)
             .setSingleChoiceItems(labels, selectedIndex) { dialog, index ->
-                val selected = snapshot.cameras.getOrNull(index) ?: return@setSingleChoiceItems
                 dialog.dismiss()
-                activateSelectedWifiCamera(wifiCameraCollection.select(selected.id))
+                val selected = snapshot.cameras.getOrNull(index)
+                if (selected != null) activateSelectedWifiCamera(wifiCameraCollection.select(selected.id))
+                else when (index - snapshot.cameras.size) {
+                    0 -> showWifiCameraSettings()
+                    1 -> if (Build.VERSION.SDK_INT >= 29) {
+                        releaseWifiConnection()
+                        startSoulearDiscovery()
+                        wifiAttemptPolicy.retry()
+                        connectSavedWifiCamera(automatic = false)
+                    } else showToast(getString(R.string.wifi_camera_old_android))
+                    2 -> {
+                        wifiAttemptPolicy.failed() // Stay disconnected until explicitly retried/reopened.
+                        releaseWifiConnection()
+                    }
+                }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -390,12 +427,117 @@ class UsbCameraFragment : CameraFragment() {
     private fun refreshWifiCameraPicker(snapshot: WifiCameraDiscoveryCollection.Snapshot) {
         val selected = snapshot.selectedCamera
         binding?.wifiCameraPicker?.apply {
-            visibility = if (snapshot.cameras.size > 1) View.VISIBLE else View.GONE
+            visibility = View.VISIBLE
             text = selected?.let { getString(R.string.wifi_camera_picker_current, it.name) }
                 ?: getString(R.string.wifi_camera_picker_title)
             contentDescription = selected?.let {
                 getString(R.string.wifi_camera_picker_description, it.name)
             } ?: getString(R.string.wifi_camera_picker_title)
+        }
+    }
+
+    private fun showWifiCameraSettings() {
+        if (Build.VERSION.SDK_INT < 29) {
+            showToast(getString(R.string.wifi_camera_old_android))
+            return
+        }
+        val store = WifiCameraProfileStore(requireContext())
+        val saved = loadWifiCameraProfile()
+        val form = layoutInflater.inflate(R.layout.dialog_wifi_camera, null)
+        val ssid = form.findViewById<android.widget.EditText>(R.id.camera_ssid)
+        val password = form.findViewById<android.widget.EditText>(R.id.camera_password)
+        val security = form.findViewById<android.widget.Spinner>(R.id.camera_security)
+        val auto = form.findViewById<android.widget.CheckBox>(R.id.camera_auto_connect)
+        ssid.setText(saved?.ssid ?: wifiCameraCollection.snapshot().selectedCamera?.networkName.orEmpty())
+        password.setText(saved?.password.orEmpty())
+        security.setSelection(saved?.security?.ordinal ?: 0)
+        auto.isChecked = saved?.autoConnect ?: true
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(R.string.wifi_camera_settings).setView(form)
+            .setPositiveButton(R.string.wifi_camera_save_connect, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setNeutralButton(R.string.wifi_camera_forget) { _, _ ->
+                store.forget()
+                wifiAttemptPolicy.failed()
+                releaseWifiConnection()
+                showToast("Saved camera forgotten. Android’s own saved network settings are unchanged.")
+            }.create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val profile = RememberedWifiCamera(ssid.text.toString(), password.text.toString(),
+                    RememberedWifiCamera.Security.entries[security.selectedItemPosition], auto.isChecked)
+                try {
+                    profile.validate()
+                    store.save(profile)
+                } catch (error: Exception) {
+                    ssid.error = if (error is IllegalArgumentException) error.message
+                        else "Could not securely save settings. Try again or use Android Wi-Fi settings."
+                    return@setOnClickListener
+                }
+                releaseWifiConnection()
+                wifiAttemptPolicy.retry()
+                dialog.dismiss()
+                connectSavedWifiCamera(automatic = false)
+            }
+        }
+        dialog.show()
+    }
+
+    @RequiresApi(29)
+    private fun loadWifiCameraProfile(): RememberedWifiCamera? = try {
+        WifiCameraProfileStore(requireContext()).load()
+    } catch (_: Exception) {
+        wifiAttemptPolicy.failed()
+        showToast("Saved Wi-Fi settings could not be read. Open Wi-Fi camera settings and save them again.")
+        null
+    }
+
+    @RequiresApi(29)
+    private fun wifiConnectionPermissions(): Array<String> = if (Build.VERSION.SDK_INT >= 33) {
+        arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES)
+    } else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+    @RequiresApi(29)
+    private fun hasWifiConnectionPermission(): Boolean = wifiConnectionPermissions().all {
+        ContextCompat.checkSelfPermission(requireContext(), it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    @RequiresApi(29)
+    private fun connectSavedWifiCamera(automatic: Boolean) {
+        if (wifiConnection != null || wifiPermissionPending || binding == null) return
+        val profile = loadWifiCameraProfile() ?: run {
+            if (!automatic) showWifiCameraSettings()
+            return
+        }
+        if (!wifiAttemptPolicy.canAttempt(automatic, profile.autoConnect)) return
+        if (!hasWifiConnectionPermission()) {
+            if (automatic) return // Revoked permissions must not cause prompts on every resume.
+            wifiPermissionPending = true
+            wifiPermissionLauncher.launch(wifiConnectionPermissions())
+            return
+        }
+        val connection = WifiCameraConnection(requireContext(), object : WifiCameraConnection.Listener {
+            override fun onNetworkReady(network: Network, properties: LinkProperties) {
+                soulearDiscoveryClient?.observeNetwork(network, properties)
+            }
+            override fun onNetworkLost(network: Network) {
+                soulearDiscoveryClient?.forgetNetwork(network)
+            }
+            override fun onStatus(message: String) { showToast(message) }
+            override fun onFailure() {
+                wifiAttemptPolicy.failed()
+                wifiConnection = null
+            }
+        })
+        wifiConnection = connection
+        connection.connect(profile)
+    }
+
+    private fun releaseWifiConnection() {
+        if (Build.VERSION.SDK_INT >= 29) {
+            wifiConnection?.network?.let { soulearDiscoveryClient?.forgetNetwork(it) }
+            wifiConnection?.close()
+            wifiConnection = null
         }
     }
 
@@ -1106,6 +1248,15 @@ class UsbCameraFragment : CameraFragment() {
         if (binding != null && soulearDiscoveryClient == null) {
             startSoulearDiscovery()
         }
+        if (Build.VERSION.SDK_INT >= 29) {
+            wifiConnection?.replayNetwork()
+            connectSavedWifiCamera(automatic = true)
+        }
+    }
+
+    override fun onStop() {
+        releaseWifiConnection()
+        super.onStop()
     }
 
     override fun onPause() {
@@ -1123,6 +1274,7 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     override fun onDestroyView() {
+        releaseWifiConnection()
         soulearDiscoveryClient?.close()
         soulearDiscoveryClient = null
         stopSoulearVideo(clearPreview = true)

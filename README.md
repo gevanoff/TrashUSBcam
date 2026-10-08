@@ -87,3 +87,48 @@ The Soulear implementation uses Android's standard networking and bitmap APIs pl
 - The app targets SDK 35. AUSBC v3.2.7 uses legacy dynamic receiver registration, so the app wraps the AUSBC context and supplies `RECEIVER_NOT_EXPORTED` on Android 13+.
 - The APK is filtered to `armeabi-v7a` and `arm64-v8a` because AUSBC's UVC native libraries are ARM-only. Physical Android phones should be fine; x86-only emulators are not supported.
 - Verified Soulear hardware: `YPC BK7231U-XRH-FBPRO`, firmware `HFNVB10B`, SSID `Soulear-394b3`. Its UDP header advertises 640×480 while its MJPEG images decode to 480×480; the preview follows the decoded image dimensions.
+
+### Remembered Wi-Fi cameras (Android 10+)
+
+Open the **Wi-Fi camera** control at the top of the preview, then **Wi-Fi camera
+settings**. Enter the camera's exact SSID and choose Open, WPA2 Personal, or WPA3
+Personal. For a detected camera, its advertised SSID is prefilled; verify it
+against the camera's actual hotspot name. Enter its Wi-Fi password if required.
+**Save and connect** requests Android's permission and connection approval.
+Enable **Connect automatically when opened** to reconnect on later app visits.
+Android can reuse approval for the same access point; changing/forgetting it may
+require approval again. This does not enable Wi-Fi or mobile data for you.
+
+The app starts preview automatically after its existing Soulear discovery probe
+recognizes a camera, including when you join camera Wi-Fi manually while the app
+is open. No background monitoring or automatic app launch is involved. Android
+9 and earlier retain manual Wi-Fi connection and automatic discovery/preview.
+
+Only camera discovery, control, and video sockets use the camera network. The
+connection request is **local-only**, and the app never binds its whole process
+to camera Wi-Fi. Internet sockets retain Android's default route, normally
+cellular while connected to an internet-less camera hotspot. Enable mobile data;
+carrier, VPN, data-saver and manufacturer policies may affect availability. Dual
+Wi-Fi support is not required for camera Wi-Fi plus cellular. On phones that
+support two Wi-Fi connections, Android may retain internet-capable Wi-Fi instead.
+This feature neither forces other apps onto cellular nor starts an internet
+upload; future livestream transports must also avoid process-wide Wi-Fi binding.
+
+A declined, failed, or lost requested connection does not repeatedly prompt on
+resume. Use **Retry saved camera** to try again, or **Cancel saved connection**
+to release the app's network request. Requests are released when the app leaves
+the screen. Cancellation suppresses auto-connect for that activity session, including configuration changes;
+reopening a fresh app session honors the saved auto-connect option. **Forget
+camera** deletes the app's stored profile, not Android's saved networks or its
+approval records. The Wi-Fi picker still supports choosing among detected cameras.
+
+One camera profile is stored in an AES-GCM encrypted file in Android's no-backup
+directory, with its key in Android Keystore. Passwords are not logged or saved in
+view state. A missing/damaged key or profile requires entering the settings again.
+The remembered SSID and the camera protocol identify a candidate, not a
+cryptographically authenticated camera; use the camera's secured hotspot where
+available. Hidden SSIDs, enterprise authentication and raw hexadecimal WPA2 keys
+are not supported by this setup form.
+
+See [Wi-Fi connection test plan](docs/wifi-connection-testing.md) for hardware
+validation, including simultaneous cellular internet and camera preview.
