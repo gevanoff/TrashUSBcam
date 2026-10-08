@@ -26,6 +26,13 @@ internal class LiveStream(
     private val onReady: (String) -> Unit,
     private val onEnded: (String?) -> Unit
 ) {
+    private data class Session(
+        val id: String,
+        val publisherToken: String,
+        val viewerToken: String,
+        val iceServers: JSONArray
+    )
+
     private val appContext = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     private val network = Executors.newSingleThreadScheduledExecutor()
@@ -33,7 +40,7 @@ internal class LiveStream(
     private val closed = AtomicBoolean(false)
     private val frameBusy = AtomicBoolean(false)
     private val offer = AtomicReference<String?>()
-    @Volatile private var session: JSONObject? = null
+    @Volatile private var session: Session? = null
     @Volatile private var lastFrame = 0L
     @Volatile private var enabled = false
     private var factory: PeerConnectionFactory? = null
@@ -48,12 +55,19 @@ internal class LiveStream(
     init {
         network.execute {
             try {
-                val created = request("/api/sessions", "POST", publishKey)
+                val response = request("/api/sessions", "POST", publishKey)
+                val created = Session(
+                    id = response.getString("id"),
+                    publisherToken = response.getString("publisherToken"),
+                    viewerToken = response.getString("viewerToken"),
+                    iceServers = response.getJSONArray("iceServers")
+                )
+                val viewingUrl = "$endpoint/#${created.id}/${created.viewerToken}"
                 session = created
                 if (closed.get()) { deleteSession(); return@execute }
-                rtc("initialize WebRTC and create offer") { setup(created.getJSONArray("iceServers")) }
+                rtc("initialize WebRTC and create offer") { setup(created.iceServers) }
                 main.post {
-                    if (!closed.get()) onReady("$endpoint/#${created.getString("id")}/${created.getString("viewerToken")}")
+                    if (!closed.get()) onReady(viewingUrl)
                 }
                 network.scheduleWithFixedDelay({ poll() }, 0, 1, TimeUnit.SECONDS)
             } catch (error: Exception) {
@@ -197,7 +211,7 @@ internal class LiveStream(
         if (closed.get()) return
         try {
             val s = session ?: return
-            val path = "/api/sessions/${s.getString("id")}"; val auth = s.getString("publisherToken")
+            val path = "/api/sessions/${s.id}"; val auth = s.publisherToken
             val body = JSONObject().put("active", enabled && lastFrame > 0 && System.nanoTime() - lastFrame < 2_000_000_000L)
             val localOffer = offer.get()
             if (!offerSent && localOffer != null) body.put("offer", localOffer)
@@ -239,7 +253,7 @@ internal class LiveStream(
 
     private fun deleteSession() {
         session?.let { s ->
-            try { request("/api/sessions/${s.getString("id")}", "DELETE", s.getString("publisherToken")) }
+            try { request("/api/sessions/${s.id}", "DELETE", s.publisherToken) }
             catch (error: Exception) {
                 Log.w(TAG, "Session revocation failed; server heartbeat expiry remains the fallback", error)
             }

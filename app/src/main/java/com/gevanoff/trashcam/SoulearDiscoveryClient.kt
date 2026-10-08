@@ -72,18 +72,7 @@ internal class SoulearDiscoveryClient(
         }
 
         override fun onLost(network: Network) {
-            val (detection, socket, noCamerasRemain) = synchronized(stateLock) {
-                availableNetworks.remove(network)
-                probingNetworks.remove(network)
-                val removedDetection = detectionsByNetwork.remove(network)
-                val removedSocket = probeSockets.remove(network)
-                Triple(removedDetection, removedSocket, detectionsByNetwork.isEmpty())
-            }
-            socket?.close()
-            detection?.let { postLost(it.cameraId) }
-            if (detection != null && noCamerasRemain) {
-                postUnavailable("Wi-Fi camera connection was lost")
-            }
+            forgetNetwork(network)
         }
     }
 
@@ -97,6 +86,7 @@ internal class SoulearDiscoveryClient(
 
         val request = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .build()
         try {
             connectivityManager.registerNetworkCallback(request, networkCallback)
@@ -114,6 +104,24 @@ internal class SoulearDiscoveryClient(
                 listener.onCameraUnavailable("Connect this phone to the camera's Wi-Fi network")
             }
         }, NETWORK_SEARCH_TIMEOUT_MS)
+    }
+
+    // Requested local-only networks are delivered explicitly as well as by passive discovery.
+    fun observeNetwork(network: Network, properties: LinkProperties) = consider(network, properties)
+
+    fun forgetNetwork(network: Network) {
+        val (detection, socket, noCamerasRemain) = synchronized(stateLock) {
+            availableNetworks.remove(network)
+            probingNetworks.remove(network)
+            val removedDetection = detectionsByNetwork.remove(network)
+            val removedSocket = probeSockets.remove(network)
+            Triple(removedDetection, removedSocket, detectionsByNetwork.isEmpty())
+        }
+        socket?.close()
+        detection?.let { postLost(it.cameraId) }
+        if (detection != null && noCamerasRemain) {
+            postUnavailable("Wi-Fi camera connection was lost")
+        }
     }
 
     private fun consider(network: Network, suppliedProperties: LinkProperties? = null) {
