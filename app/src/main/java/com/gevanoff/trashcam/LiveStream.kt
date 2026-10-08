@@ -33,6 +33,11 @@ internal class LiveStream(
         val iceServers: JSONArray
     )
 
+    private data class SessionCleanup(
+        val id: String,
+        val publisherToken: String
+    )
+
     private val appContext = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     private val network = Executors.newSingleThreadScheduledExecutor()
@@ -40,6 +45,7 @@ internal class LiveStream(
     private val closed = AtomicBoolean(false)
     private val frameBusy = AtomicBoolean(false)
     private val offer = AtomicReference<String?>()
+    private val sessionCleanup = AtomicReference<SessionCleanup?>()
     @Volatile private var session: Session? = null
     @Volatile private var lastFrame = 0L
     @Volatile private var enabled = false
@@ -56,9 +62,16 @@ internal class LiveStream(
         network.execute {
             try {
                 val response = request("/api/sessions", "POST", publishKey)
-                val created = Session(
+                // Retain revocation credentials before validating fields that are not
+                // needed by DELETE, so a malformed successful response cannot leak a
+                // server-side session until heartbeat expiry.
+                val cleanup = SessionCleanup(
                     id = response.getString("id"),
-                    publisherToken = response.getString("publisherToken"),
+                    publisherToken = response.getString("publisherToken")
+                ).also { sessionCleanup.set(it) }
+                val created = Session(
+                    id = cleanup.id,
+                    publisherToken = cleanup.publisherToken,
                     viewerToken = response.getString("viewerToken"),
                     iceServers = response.getJSONArray("iceServers")
                 )
@@ -252,7 +265,8 @@ internal class LiveStream(
     }
 
     private fun deleteSession() {
-        session?.let { s ->
+        session = null
+        sessionCleanup.getAndSet(null)?.let { s ->
             try { request("/api/sessions/${s.id}", "DELETE", s.publisherToken) }
             catch (error: Exception) {
                 Log.w(TAG, "Session revocation failed; server heartbeat expiry remains the fallback", error)
