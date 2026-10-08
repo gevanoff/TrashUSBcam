@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import org.webrtc.*
@@ -50,19 +51,21 @@ internal class LiveStream(
                 val created = request("/api/sessions", "POST", publishKey)
                 session = created
                 if (closed.get()) { deleteSession(); return@execute }
-                rtc { setup(created.getJSONArray("iceServers")) }
+                rtc("initialize WebRTC and create offer") { setup(created.getJSONArray("iceServers")) }
                 main.post {
                     if (!closed.get()) onReady("$endpoint/#${created.getString("id")}/${created.getString("viewerToken")}")
                 }
                 network.scheduleWithFixedDelay({ poll() }, 0, 1, TimeUnit.SECONDS)
-            } catch (error: Exception) { close(error.message ?: "Could not start sharing") }
+            } catch (error: Exception) {
+                fail("create signaling session", error, error.message ?: "Could not start sharing")
+            }
         }
     }
 
     fun setEnabled(value: Boolean) {
         enabled = value
         if (!value) lastFrame = 0
-        rtc { track?.setEnabled(value) }
+        rtc("update video track enabled state") { track?.setEnabled(value) }
     }
 
     /** Caller gives ownership of this bounded-size bitmap, including when a frame is dropped. */
@@ -90,19 +93,40 @@ internal class LiveStream(
                     val frame = VideoFrame(buffer, 0, System.nanoTime())
                     try { source?.capturerObserver?.onFrameCaptured(frame); lastFrame = System.nanoTime() }
                     finally { frame.release() }
-                } catch (error: Exception) { close("Could not encode live video") }
+                } catch (error: Exception) {
+                    fail("transform/convert/submit video frame", error, "Could not encode live video")
+                } catch (error: LinkageError) {
+                    fail("submit video frame to native WebRTC", error, "Could not encode live video")
+                }
                 finally {
                     if (transformed !== bitmap) transformed?.recycle()
                     bitmap.recycle(); frameBusy.set(false)
                 }
             }
-        } catch (_: RejectedExecutionException) { bitmap.recycle(); frameBusy.set(false) }
+        } catch (error: RejectedExecutionException) {
+            Log.d(TAG, "Frame submission skipped: RTC worker has stopped", error)
+            bitmap.recycle(); frameBusy.set(false)
+        }
     }
 
-    private fun rtc(action: () -> Unit) {
+    private fun fail(operation: String, error: Throwable, message: String) {
+        Log.e(TAG, "Live sharing failed during $operation", error)
+        close(message)
+    }
+
+    private fun rtc(operation: String, action: () -> Unit) {
         if (closed.get()) return
-        try { rtcWorker.execute { if (!closed.get()) try { action() } catch (_: Exception) { close("Video connection failed") } } }
-        catch (_: RejectedExecutionException) { /* Already stopped. */ }
+        try {
+            rtcWorker.execute {
+                if (!closed.get()) {
+                    try { action() }
+                    catch (error: Exception) { fail(operation, error, "Video connection failed") }
+                    catch (error: LinkageError) { fail(operation, error, "Video connection failed") }
+                }
+            }
+        } catch (error: RejectedExecutionException) {
+            Log.d(TAG, "Skipped $operation: RTC worker has stopped", error)
+        }
     }
 
     private fun setup(servers: JSONArray) {
@@ -128,11 +152,14 @@ internal class LiveStream(
         val connection = localFactory.createPeerConnection(config, object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState) {}
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-                if (state == PeerConnection.IceConnectionState.FAILED) close("Viewer connection failed. Start a new share.")
+                if (state == PeerConnection.IceConnectionState.FAILED) {
+                    Log.e(TAG, "ICE connectivity failed after peer negotiation")
+                    close("Viewer connection failed. Start a new share.")
+                }
             }
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
-                if (state == PeerConnection.IceGatheringState.COMPLETE) rtc { offer.set(peer?.localDescription?.description) }
+                if (state == PeerConnection.IceGatheringState.COMPLETE) rtc("read completed local SDP offer") { offer.set(peer?.localDescription?.description) }
             }
             override fun onIceCandidate(candidate: IceCandidate) {}
             override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) {}
@@ -148,18 +175,22 @@ internal class LiveStream(
             it.setEnabled(enabled)
             connection.addTransceiver(it, RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.SEND_ONLY))
         }
-        connection.createOffer(object : DescriptionObserver() {
+        connection.createOffer(object : DescriptionObserver("create offer") {
             override fun onCreateSuccess(description: SessionDescription) {
-                rtc { connection.setLocalDescription(DescriptionObserver(), description) }
+                rtc("set local SDP offer") { connection.setLocalDescription(DescriptionObserver("set local offer"), description) }
             }
         }, MediaConstraints())
     }
 
-    private open inner class DescriptionObserver : SdpObserver {
+    private open inner class DescriptionObserver(private val operation: String) : SdpObserver {
         override fun onCreateSuccess(description: SessionDescription) {}
         override fun onSetSuccess() {}
-        override fun onCreateFailure(message: String) { close("Could not negotiate live video") }
-        override fun onSetFailure(message: String) { close("Could not negotiate live video") }
+        override fun onCreateFailure(message: String) { negotiationFailed("create", message) }
+        override fun onSetFailure(message: String) { negotiationFailed("set", message) }
+        private fun negotiationFailed(callback: String, message: String) {
+            Log.e(TAG, "SDP $operation failed ($callback callback): $message")
+            close("Could not negotiate live video")
+        }
     }
 
     private fun poll() {
@@ -177,9 +208,11 @@ internal class LiveStream(
             if (!answerSet && !state.isNull("answer")) {
                 answerSet = true
                 val answer = state.getString("answer")
-                rtc { peer?.setRemoteDescription(DescriptionObserver(), SessionDescription(SessionDescription.Type.ANSWER, answer)) }
+                rtc("set remote SDP answer") { peer?.setRemoteDescription(DescriptionObserver("set remote answer"), SessionDescription(SessionDescription.Type.ANSWER, answer)) }
             }
-        } catch (error: Exception) { close(error.message ?: "Sharing connection lost") }
+        } catch (error: Exception) {
+            fail("poll signaling / publish offer / receive answer", error, error.message ?: "Sharing connection lost")
+        }
     }
 
     private fun request(path: String, method: String, auth: String, body: JSONObject? = null): JSONObject {
@@ -207,7 +240,9 @@ internal class LiveStream(
     private fun deleteSession() {
         session?.let { s ->
             try { request("/api/sessions/${s.getString("id")}", "DELETE", s.getString("publisherToken")) }
-            catch (_: Exception) { /* Server also expires missing publisher heartbeats. */ }
+            catch (error: Exception) {
+                Log.w(TAG, "Session revocation failed; server heartbeat expiry remains the fallback", error)
+            }
         }
     }
 
@@ -228,6 +263,7 @@ internal class LiveStream(
     }
 
     companion object {
+        private const val TAG = "TrashcamLiveStream"
         private var initialized = false
         fun validEndpoint(value: String): Boolean = try {
             val uri = URI(value)
