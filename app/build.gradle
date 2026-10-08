@@ -58,6 +58,9 @@ dependencies {
         exclude group: 'com.zlc.glide',        module: 'webpdecoder'
     }
 
+    // Pinned native WebRTC publisher; retains the existing ARM ABI filters.
+    implementation 'io.github.webrtc-sdk:android:150.7871.01'
+
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'

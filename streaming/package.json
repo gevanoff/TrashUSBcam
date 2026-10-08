@@ -1,0 +1,16 @@
+{
+  "name": "trashusbcam-live",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test server.test.mjs",
+    "test:browser": "node browser-smoke.cjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

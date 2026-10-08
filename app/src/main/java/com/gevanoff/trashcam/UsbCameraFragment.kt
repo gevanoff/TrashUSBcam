@@ -74,6 +74,10 @@ class UsbCameraFragment : CameraFragment() {
 
     private var binding: FragmentCameraBinding? = null
     private var cameraTextureView: AspectRatioTextureView? = null
+    private var liveShare: LiveShareControls? = null
+    private var liveUsbTimestamp = -1L
+    private var liveUsbChangedAt = 0L
+    private var liveWifiFrameAt = 0L
     private var isPreviewFlipped = false
     private var previewQuarterTurns = 0
     private var isPhotoCapturing = false
@@ -194,6 +198,12 @@ class UsbCameraFragment : CameraFragment() {
     override fun initData() {
         super.initData()
         setupGallery()
+        binding?.let { views ->
+            liveShare = LiveShareControls(requireContext(), views, ::liveSnapshot) {
+                previewQuarterTurns to isPreviewFlipped
+            }
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) liveShare?.resume()
+        }
         val previewPreferences = requireContext().getSharedPreferences(PREVIEW_PREFERENCES, Context.MODE_PRIVATE)
         // The released Flip setting was a half-turn. Preserve that orientation on upgrade.
         if (!previewPreferences.contains(KEY_PREVIEW_MIRRORED) &&
@@ -246,6 +256,37 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     // --- Camera state helpers ---
+
+    /** Read only the raw camera surface, with even dimensions and bounded conversion cost. */
+    private fun liveSnapshot(): Bitmap? {
+        val usb = isCameraOpened()
+        val texture = cameraTextureView
+        val wifi = soulearDisplayedBitmap
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (usb) {
+            val timestamp = texture?.surfaceTexture?.timestamp ?: return null
+            if (timestamp != liveUsbTimestamp) {
+                liveUsbTimestamp = timestamp
+                liveUsbChangedAt = now
+            }
+            if (now - liveUsbChangedAt > 2000) return null
+        } else if (now - liveWifiFrameAt > 2000) return null
+        val width = if (usb) texture?.width ?: 0 else if (soulearStreaming) wifi?.width ?: 0 else 0
+        val height = if (usb) texture?.height ?: 0 else if (soulearStreaming) wifi?.height ?: 0 else 0
+        if (width < 2 || height < 2) return null
+        val scale = minOf(1f, 640f / maxOf(width, height))
+        val w = maxOf(2, (width * scale).toInt() / 2 * 2)
+        val h = maxOf(2, (height * scale).toInt() / 2 * 2)
+        return if (usb) {
+            if (texture?.isAvailable == true) texture.getBitmap(w, h) else null
+        } else {
+            // Always own the copy: displaySoulearFrame recycles its own bitmaps.
+            wifi?.let {
+                val scaled = Bitmap.createScaledBitmap(it, w, h, true)
+                if (scaled === it) it.copy(Bitmap.Config.ARGB_8888, false) else scaled
+            }
+        }
+    }
 
     private fun applyPreviewOrientation() {
         val views = binding ?: return
@@ -626,6 +667,7 @@ class UsbCameraFragment : CameraFragment() {
         soulearRetiredBitmap?.recycle()
         soulearRetiredBitmap = soulearDisplayedBitmap
         soulearDisplayedBitmap = bitmap
+        liveWifiFrameAt = android.os.SystemClock.elapsedRealtime()
         soulearStreaming = true
         currentBinding.soulearPreview.setImageBitmap(bitmap)
         applyPreviewOrientation()
@@ -1242,6 +1284,7 @@ class UsbCameraFragment : CameraFragment() {
 
     override fun onResume() {
         super.onResume()
+        liveShare?.resume()
         if (mediaAdapter != null) {
             loadGallery()
         }
@@ -1260,6 +1303,7 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     override fun onPause() {
+        liveShare?.pause()
         binding?.videoPreview?.stopPlayback()
         if (soulearRecorder != null && isRecording) {
             stopVideoRecording()
@@ -1274,6 +1318,8 @@ class UsbCameraFragment : CameraFragment() {
     }
 
     override fun onDestroyView() {
+        liveShare?.destroy()
+        liveShare = null
         releaseWifiConnection()
         soulearDiscoveryClient?.close()
         soulearDiscoveryClient = null

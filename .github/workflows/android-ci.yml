@@ -10,6 +10,21 @@ permissions:
   contents: read
 
 jobs:
+  streaming:
+    name: Live sharing service
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: node --test streaming/server.test.mjs
+      - run: node --check streaming/public/viewer.js
+      - run: npm ci --prefix streaming
+      - run: npx --prefix streaming playwright install --with-deps chromium
+      - run: node streaming/browser-smoke.cjs
+
   validate:
     name: JDK ${{ matrix.java }}
     runs-on: ubuntu-latest

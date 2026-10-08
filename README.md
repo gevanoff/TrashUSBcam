@@ -132,3 +132,7 @@ are not supported by this setup form.
 
 See [Wi-Fi connection test plan](docs/wifi-connection-testing.md) for hardware
 validation, including simultaneous cellular internet and camera preview.
+
+### Experimental live sharing
+
+The preview's share symbol creates a one-viewer, video-only browser link that can be sent through Android's share menu. Rotation and reflection are included. Sharing pauses outside TrashUSBcam and stops when the camera screen is destroyed. This requires your own HTTPS signaling service and a TURN relay for dependable internet access. See [setup, limitations, and testing](streaming/README.md).
