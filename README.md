@@ -117,7 +117,7 @@ upload; future livestream transports must also avoid process-wide Wi-Fi binding.
 A declined, failed, or lost requested connection does not repeatedly prompt on
 resume. Use **Retry saved camera** to try again, or **Cancel saved connection**
 to release the app's network request. Requests are released when the app leaves
-the screen. Cancellation suppresses auto-connect for that fragment session;
+the screen. Cancellation suppresses auto-connect for that activity session, including configuration changes;
 reopening a fresh app session honors the saved auto-connect option. **Forget
 camera** deletes the app's stored profile, not Android's saved networks or its
 approval records. The Wi-Fi picker still supports choosing among detected cameras.

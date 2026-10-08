@@ -20,7 +20,7 @@ whether mobile data/VPN/data saver are enabled. Do not include Wi-Fi passwords.
   then return. Verify automatic preview. Repeat while the app is already visible
   (for example, using the Wi-Fi panel). Check multi-camera selection remains usable.
 - Deny network approval, lose the hotspot, or cancel the request. Repeated
-  pause/resume must not prompt again in the same fragment session. Explicit Retry
+  pause/resume must not prompt again in the same activity session, including after activity recreation. Explicit Retry
   should work. Test background/foreground, rotation/activity recreation, screen
   lock and USB attach/detach. The Wi-Fi request must be released on stop/destruction.
 - Change security or password: verify an old request is released before the new

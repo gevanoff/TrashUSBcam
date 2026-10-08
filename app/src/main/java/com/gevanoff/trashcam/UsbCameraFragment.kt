@@ -37,6 +37,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.gevanoff.trashcam.databinding.FragmentCameraBinding
 import com.jiangdg.ausbc.CameraClient
@@ -82,7 +83,11 @@ class UsbCameraFragment : CameraFragment() {
     private var selectedGalleryItem: GalleryItem? = null
     private var pendingDeleteItem: GalleryItem? = null
     private var wifiConnection: WifiCameraConnection? = null
-    private val wifiAttemptPolicy = WifiCameraAttemptPolicy()
+    private val wifiSession by lazy {
+        ViewModelProvider(requireActivity())[WifiCameraSession::class.java]
+    }
+    private val wifiAttemptPolicy: WifiCameraAttemptPolicy
+        get() = wifiSession.attemptPolicy
     private var wifiPermissionPending = false
     private val wifiPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
