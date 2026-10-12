@@ -28,8 +28,16 @@ internal data class RememberedWifiCamera(
 /** A failed/denied request needs an explicit retry, not an Activity resume or another callback. */
 internal class WifiCameraAttemptPolicy {
     private var blocked = false
+    private var pendingFailureMessage: String? = null
     fun canAttempt(automatic: Boolean, autoConnect: Boolean): Boolean =
         !blocked && (!automatic || autoConnect)
-    fun failed() { blocked = true }
-    fun retry() { blocked = false }
+    fun failed(message: String? = null) {
+        blocked = true
+        if (message != null) pendingFailureMessage = message
+    }
+    fun consumeFailureMessage(): String? = pendingFailureMessage.also { pendingFailureMessage = null }
+    fun retry() {
+        blocked = false
+        pendingFailureMessage = null
+    }
 }

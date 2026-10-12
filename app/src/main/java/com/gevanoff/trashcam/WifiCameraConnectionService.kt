@@ -60,7 +60,12 @@ internal class WifiCameraConnectionService : Service() {
             override fun onNetworkLost(network: Network) { listener?.onNetworkLost(network) }
             override fun onStatus(message: String) {
                 if (hasRequest) promote(message)
-                listener?.onStatus(message)
+                val observer = listener
+                if (!hasRequest) attemptPolicy?.failed(message)
+                if (observer != null) {
+                    if (!hasRequest) attemptPolicy?.consumeFailureMessage()
+                    observer.onStatus(message)
+                }
             }
             override fun onFailure() {
                 attemptPolicy?.failed()
@@ -80,7 +85,9 @@ internal class WifiCameraConnectionService : Service() {
             attemptPolicy?.failed()
             release()
             listener?.onFailure()
-            listener?.onStatus(getString(R.string.wifi_connection_service_failed))
+            val message = getString(R.string.wifi_connection_service_failed)
+            attemptPolicy?.failed(message)
+            listener?.onStatus(message)
         }
     }
 

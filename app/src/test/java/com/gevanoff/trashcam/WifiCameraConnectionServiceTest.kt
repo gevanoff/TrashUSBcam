@@ -50,4 +50,18 @@ class WifiCameraConnectionServiceTest {
         assertFalse(policy.canAttempt(automatic = true, autoConnect = true))
         controller.destroy()
     }
+
+    @Test fun `failure message survives while observer is detached and is consumed on resume`() {
+        val policy = WifiCameraAttemptPolicy()
+        val message = "Camera Wi-Fi lost. Open Wi-Fi camera settings to retry."
+
+        policy.failed()
+        policy.failed(message)
+
+        assertFalse(policy.canAttempt(automatic = true, autoConnect = true))
+        assertEquals(message, policy.consumeFailureMessage())
+        assertNull(policy.consumeFailureMessage())
+        policy.retry()
+        assertTrue(policy.canAttempt(automatic = true, autoConnect = true))
+    }
 }
