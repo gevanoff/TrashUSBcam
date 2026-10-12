@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- USB host support to connect external USB cameras -->
     <uses-feature
@@ -40,7 +41,9 @@
         android:theme="@style/Theme.TrashUSBcam">
 
         <service android:name=".WifiCameraConnectionService"
-            android:exported="false" android:foregroundServiceType="connectedDevice" />
+            android:enabled="@bool/wifi_connection_service_enabled"
+            android:exported="false" android:foregroundServiceType="connectedDevice"
+            tools:targetApi="29" />
 
         <activity
             android:name=".MainActivity"
