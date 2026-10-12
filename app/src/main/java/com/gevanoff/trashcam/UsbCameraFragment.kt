@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 15016)
-Total output lines: 1464
-
 package com.gevanoff.trashcam
 
 import android.Manifest
@@ -529,7 +526,313 @@ class UsbCameraFragment : CameraFragment() {
             }.create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val profile = RememberedWifiCamera(ssid.text.toString(), password.text.toS…3016 tokens truncated…th an application Context so teardown cannot reject
+                val profile = RememberedWifiCamera(ssid.text.toString(), password.text.toString(),
+                    RememberedWifiCamera.Security.entries[security.selectedItemPosition], auto.isChecked)
+                try {
+                    profile.validate()
+                    store.save(profile)
+                } catch (error: Exception) {
+                    ssid.error = if (error is IllegalArgumentException) error.message
+                        else "Could not securely save settings. Try again or use Android Wi-Fi settings."
+                    return@setOnClickListener
+                }
+                releaseWifiConnection()
+                wifiAttemptPolicy.retry()
+                dialog.dismiss()
+                connectSavedWifiCamera(automatic = false)
+            }
+        }
+        dialog.show()
+    }
+
+    @RequiresApi(29)
+    private fun loadWifiCameraProfile(): RememberedWifiCamera? = try {
+        WifiCameraProfileStore(requireContext()).load()
+    } catch (_: Exception) {
+        wifiAttemptPolicy.failed()
+        showToast("Saved Wi-Fi settings could not be read. Open Wi-Fi camera settings and save them again.")
+        null
+    }
+
+    @RequiresApi(29)
+    private fun wifiConnectionPermissions(): Array<String> = if (Build.VERSION.SDK_INT >= 33) {
+        arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES)
+    } else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+    @RequiresApi(29)
+    private fun hasWifiConnectionPermission(): Boolean = wifiConnectionPermissions().all {
+        ContextCompat.checkSelfPermission(requireContext(), it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    @RequiresApi(29)
+    private fun connectSavedWifiCamera(automatic: Boolean) {
+        if (!isResumed || wifiService == null) {
+            if (!automatic) pendingManualWifiConnect = true
+            return
+        }
+        if (wifiPermissionPending || binding == null) return
+        val service = wifiService ?: return
+        if (service.hasRequest) return
+        val profile = loadWifiCameraProfile() ?: run {
+            if (!automatic) showWifiCameraSettings()
+            return
+        }
+        if (!wifiAttemptPolicy.canAttempt(automatic, profile.autoConnect)) return
+        if (!hasWifiConnectionPermission()) {
+            if (automatic) return // Revoked permissions must not cause prompts on every resume.
+            wifiPermissionPending = true
+            wifiPermissionLauncher.launch(wifiConnectionPermissions())
+            return
+        }
+        service.connect(profile, wifiAttemptPolicy)
+    }
+
+    @RequiresApi(29)
+    private fun resumeWifiConnection() {
+        if (!isResumed || wifiService == null) return
+        wifiService?.attach(wifiObserver, wifiAttemptPolicy)
+        wifiAttemptPolicy.consumeFailureMessage()?.let(::showToast)
+        val automatic = !pendingManualWifiConnect
+        pendingManualWifiConnect = false
+        connectSavedWifiCamera(automatic)
+    }
+
+    private fun releaseWifiConnection() {
+        if (Build.VERSION.SDK_INT >= 29) wifiService?.disconnect()
+    }
+
+    private fun startSoulearVideo(result: SoulearDiscoveryClient.Detection) {
+        soulearVideoClient?.close()
+        soulearVideoClient = SoulearVideoClient(
+            network = result.network,
+            cameraAddress = result.cameraAddress,
+            listener = object : SoulearVideoClient.Listener {
+                override fun onStreamStarting(localPort: Int) {
+                    if (!isCameraOpened()) {
+                        binding?.statusText?.apply {
+                            text = getString(R.string.soulear_stream_starting, localPort)
+                            visibility = View.VISIBLE
+                        }
+                    }
+                }
+
+                override fun onFrame(frame: SoulearFrameAssembler.Frame) {
+                    if (activeWifiCameraId != result.cameraId) return
+                    queueSoulearFrame(frame)
+                }
+
+                override fun onStreamError(reason: String) {
+                    if (activeWifiCameraId != result.cameraId) return
+                    if (soulearRecorder != null && isRecording) {
+                        stopVideoRecording()
+                    }
+                    soulearVideoClient?.close()
+                    soulearVideoClient = null
+                    soulearStreaming = false
+                    refreshCaptureControls()
+                    if (!isCameraOpened()) {
+                        binding?.statusText?.apply {
+                            text = getString(R.string.soulear_stream_error, reason)
+                            visibility = View.VISIBLE
+                        }
+                    }
+                }
+            }
+        ).also { it.start() }
+    }
+
+    private fun queueSoulearFrame(frame: SoulearFrameAssembler.Frame) {
+        pendingSoulearFrame.set(frame)
+        if (!soulearDecodeScheduled.compareAndSet(false, true)) return
+        try {
+            soulearFrameDecoder.execute(::decodePendingSoulearFrames)
+        } catch (_: RejectedExecutionException) {
+            soulearDecodeScheduled.set(false)
+        }
+    }
+
+    private fun decodePendingSoulearFrames() {
+        try {
+            while (true) {
+                val frame = pendingSoulearFrame.getAndSet(null) ?: break
+                val bitmap = BitmapFactory.decodeByteArray(frame.jpeg, 0, frame.jpeg.size) ?: continue
+                soulearRecorder?.offerFrame(bitmap)
+                runOnUi { displaySoulearFrame(bitmap) }
+            }
+        } finally {
+            soulearDecodeScheduled.set(false)
+            if (pendingSoulearFrame.get() != null && soulearDecodeScheduled.compareAndSet(false, true)) {
+                try {
+                    soulearFrameDecoder.execute(::decodePendingSoulearFrames)
+                } catch (_: RejectedExecutionException) {
+                    soulearDecodeScheduled.set(false)
+                }
+            }
+        }
+    }
+
+    private fun displaySoulearFrame(bitmap: Bitmap) {
+        val currentBinding = binding
+        if (currentBinding == null || soulearVideoClient == null) {
+            bitmap.recycle()
+            return
+        }
+        if (!soulearStreaming) {
+            android.util.Log.i(
+                TAG,
+                "Soulear preview active: decodedSize=${bitmap.width}x${bitmap.height}"
+            )
+        }
+        soulearRetiredBitmap?.recycle()
+        soulearRetiredBitmap = soulearDisplayedBitmap
+        soulearDisplayedBitmap = bitmap
+        liveWifiFrameAt = android.os.SystemClock.elapsedRealtime()
+        soulearStreaming = true
+        currentBinding.soulearPreview.setImageBitmap(bitmap)
+        applyPreviewOrientation()
+        currentBinding.soulearPreviewLayer.visibility = if (isCameraOpened()) View.GONE else View.VISIBLE
+        if (!isCameraOpened()) currentBinding.statusText.visibility = View.GONE
+        refreshCaptureControls()
+    }
+
+    private fun stopSoulearVideo(clearPreview: Boolean) {
+        if (soulearRecorder != null && isRecording) {
+            stopVideoRecording()
+        }
+        soulearVideoClient?.close()
+        soulearVideoClient = null
+        soulearStreaming = false
+        pendingSoulearFrame.set(null)
+        if (clearPreview) {
+            binding?.soulearPreview?.setImageDrawable(null)
+            soulearDisplayedBitmap?.recycle()
+            soulearRetiredBitmap?.recycle()
+            soulearDisplayedBitmap = null
+            soulearRetiredBitmap = null
+            binding?.soulearPreviewLayer?.visibility = View.GONE
+        }
+        refreshCaptureControls()
+    }
+
+    private fun onCameraError(msg: String?) {
+        if (isRecording && soulearRecorder == null) {
+            stopVideoRecording()
+        }
+        if (!soulearStreaming) {
+            binding?.statusText?.apply {
+                text = getString(R.string.camera_error, msg ?: getString(R.string.error_unknown))
+                visibility = View.VISIBLE
+            }
+        }
+        refreshCaptureControls()
+    }
+
+    private fun capturePhoto() {
+        if (!isCameraOpened() && !soulearStreaming) {
+            showToast(getString(R.string.camera_not_ready))
+            return
+        }
+        if (isPhotoCapturing) {
+            return
+        }
+
+        val bitmap = if (isCameraOpened()) {
+            val textureView = cameraTextureView
+            if (textureView == null || !textureView.isAvailable) null else try {
+                textureView.bitmap
+            } catch (_: IllegalStateException) {
+                null
+            }
+        } else {
+            try {
+                soulearDisplayedBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+            } catch (_: IllegalStateException) {
+                null
+            }
+        }
+        if (bitmap == null) {
+            showToast(getString(R.string.capture_failed, getString(R.string.error_unknown)))
+            return
+        }
+        val file = createCaptureFile(CaptureKind.Photo)
+        val publishContext = requireContext().applicationContext
+        setPhotoCaptureState(true)
+        mediaPublisher.execute {
+            try {
+                FileOutputStream(file).use { output ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
+                        throw IOException("Could not encode photo")
+                    }
+                }
+                publishMediaOnWorker(CaptureKind.Photo, file, publishContext)
+            } catch (error: Exception) {
+                runOnUi {
+                    setPhotoCaptureState(false)
+                    showToast(getString(R.string.capture_failed, error.localizedMessage ?: getString(R.string.error_unknown)))
+                }
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
+    private fun toggleVideoRecording() {
+        if (isRecording) {
+            stopVideoRecording()
+        } else {
+            startVideoRecording()
+        }
+    }
+
+    private fun startVideoRecording() {
+        if (!isCameraOpened()) {
+            if (soulearStreaming) {
+                startSoulearVideoRecording()
+            } else {
+                showToast(getString(R.string.camera_not_ready))
+            }
+            return
+        }
+        if (!hasAudioPermission()) {
+            pendingVideoStart = true
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+
+        val file = createCaptureFile(CaptureKind.Video)
+        setRecordingState(true)
+        captureVideoStart(createCaptureCallback(CaptureKind.Video, file), file.absolutePath, VIDEO_DURATION_UNLIMITED)
+    }
+
+    private fun startSoulearVideoRecording() {
+        if (soulearRecorder != null) return
+        val source = soulearDisplayedBitmap
+        if (source == null || source.isRecycled || source.width % 2 != 0 || source.height % 2 != 0) {
+            showToast(getString(R.string.camera_not_ready))
+            return
+        }
+
+        val publishContext = requireContext().applicationContext
+        val baseFile = createCaptureFile(CaptureKind.Video)
+        val outputFile = File("${baseFile.absolutePath}.${CaptureKind.Video.extension}")
+        lateinit var recorder: SoulearMp4Recorder
+        recorder = SoulearMp4Recorder(
+            outputFile = outputFile,
+            width = source.width,
+            height = source.height,
+            listener = object : SoulearMp4Recorder.Listener {
+                override fun onRecordingStarted(encoderName: String) {
+                    android.util.Log.i(TAG, "Soulear MP4 recording started with $encoderName")
+                }
+
+                override fun onRecordingComplete(file: File, frameCount: Int) {
+                    android.util.Log.i(
+                        TAG,
+                        "Soulear MP4 recording complete: frames=$frameCount bytes=${file.length()}"
+                    )
+                    if (soulearRecorder === recorder) soulearRecorder = null
+                    // This callback can outlive the Fragment during encoder drain. Publish on
+                    // the recorder worker with an application Context so teardown cannot reject
                     // the work or detach the Context before the temporary MP4 is copied.
                     publishMediaOnWorker(CaptureKind.Video, file, publishContext)
                     runOnUi { refreshCaptureControls() }
