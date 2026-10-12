@@ -71,4 +71,8 @@
         <item>WPA2 Personal</item>
         <item>WPA3 Personal</item>
     </string-array>
+    <string name="wifi_connection_channel">Camera Wi-Fi connection</string>
+    <string name="wifi_connection_connecting">Connecting; Wi-Fi stays connected while you switch apps.</string>
+    <string name="wifi_connection_disconnect">Disconnect</string>
+    <string name="wifi_connection_service_failed">Could not keep camera Wi-Fi active. Check app permissions and retry.</string>
 </resources>

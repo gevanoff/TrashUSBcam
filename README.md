@@ -101,7 +101,7 @@ require approval again. This does not enable Wi-Fi or mobile data for you.
 
 The app starts preview automatically after its existing Soulear discovery probe
 recognizes a camera, including when you join camera Wi-Fi manually while the app
-is open. No background monitoring or automatic app launch is involved. Android
+is open. The saved connection is held by a foreground service while you switch apps. Preview and livestream frame delivery still pause outside the app; there is no automatic app launch. Android
 9 and earlier retain manual Wi-Fi connection and automatic discovery/preview.
 
 Only camera discovery, control, and video sockets use the camera network. The
@@ -116,8 +116,10 @@ upload; future livestream transports must also avoid process-wide Wi-Fi binding.
 
 A declined, failed, or lost requested connection does not repeatedly prompt on
 resume. Use **Retry saved camera** to try again, or **Cancel saved connection**
-to release the app's network request. Requests are released when the app leaves
-the screen. Cancellation suppresses auto-connect for that activity session, including configuration changes;
+to release the app's network request. Requests stay active when the app leaves
+the screen. A camera Wi-Fi notification provides a Disconnect action; Cancel saved
+connection and Forget camera also release the request. Force-stop or Android stopping
+the service still releases it; the service does not restart itself or reconnect silently. Cancellation suppresses auto-connect for that activity session, including configuration changes;
 reopening a fresh app session honors the saved auto-connect option. **Forget
 camera** deletes the app's stored profile, not Android's saved networks or its
 approval records. The Wi-Fi picker still supports choosing among detected cameras.

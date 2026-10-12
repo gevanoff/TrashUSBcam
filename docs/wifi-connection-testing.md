@@ -22,7 +22,14 @@ whether mobile data/VPN/data saver are enabled. Do not include Wi-Fi passwords.
 - Deny network approval, lose the hotspot, or cancel the request. Repeated
   pause/resume must not prompt again in the same activity session, including after activity recreation. Explicit Retry
   should work. Test background/foreground, rotation/activity recreation, screen
-  lock and USB attach/detach. The Wi-Fi request must be released on stop/destruction.
+  lock and USB attach/detach. Switching to Home/another app and recreating the activity must retain the same
+  Wi-Fi request without another approval prompt. Return and confirm preview resumes.
+  Use the notification Disconnect action while backgrounded: the request and
+  notification must disappear and returning must not auto-reconnect in that session.
+  Also test Cancel saved connection, Forget, hotspot loss and force-stop. Service
+  destruction must release the request; it must not restart itself. With notification
+  permission denied on Android 13+, verify the service remains visible in Android’s
+  Active apps controls and in-app cancellation works.
 - Change security or password: verify an old request is released before the new
   profile is requested. Exercise Open/WPA2/WPA3 where supported; do not silently
   downgrade on failure. Check long and non-ASCII SSIDs, invalid passwords and

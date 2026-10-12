@@ -7,6 +7,8 @@ import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.ContentUris
 import android.content.ContentValues
+import android.content.ComponentName
+import android.content.ServiceConnection
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -21,6 +23,7 @@ import android.net.LinkProperties
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.IBinder
 import android.os.Handler
 import android.provider.BaseColumns
 import android.provider.MediaStore
@@ -86,7 +89,25 @@ class UsbCameraFragment : CameraFragment() {
     private var mediaAdapter: MediaThumbnailAdapter? = null
     private var selectedGalleryItem: GalleryItem? = null
     private var pendingDeleteItem: GalleryItem? = null
-    private var wifiConnection: WifiCameraConnection? = null
+    private var wifiService: WifiCameraConnectionService? = null
+    private var wifiServiceBound = false
+    private var pendingManualWifiConnect = false
+    private val wifiObserver = object : WifiCameraConnection.Listener {
+        override fun onNetworkReady(network: Network, properties: LinkProperties) {
+            soulearDiscoveryClient?.observeNetwork(network, properties)
+        }
+        override fun onNetworkLost(network: Network) { soulearDiscoveryClient?.forgetNetwork(network) }
+        override fun onStatus(message: String) { showToast(message) }
+        override fun onFailure() { wifiAttemptPolicy.failed() }
+    }
+    private val wifiServiceBinding = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+            if (Build.VERSION.SDK_INT < 29 || !wifiServiceBound) return
+            wifiService = (binder as WifiCameraConnectionService.LocalBinder).service
+            resumeWifiConnection()
+        }
+        override fun onServiceDisconnected(name: ComponentName) { wifiService = null }
+    }
     private val wifiSession by lazy {
         ViewModelProvider(requireActivity())[WifiCameraSession::class.java]
     }
@@ -545,7 +566,13 @@ class UsbCameraFragment : CameraFragment() {
 
     @RequiresApi(29)
     private fun connectSavedWifiCamera(automatic: Boolean) {
-        if (wifiConnection != null || wifiPermissionPending || binding == null) return
+        if (!isResumed || wifiService == null) {
+            if (!automatic) pendingManualWifiConnect = true
+            return
+        }
+        if (wifiPermissionPending || binding == null) return
+        val service = wifiService ?: return
+        if (service.hasRequest) return
         val profile = loadWifiCameraProfile() ?: run {
             if (!automatic) showWifiCameraSettings()
             return
@@ -557,29 +584,20 @@ class UsbCameraFragment : CameraFragment() {
             wifiPermissionLauncher.launch(wifiConnectionPermissions())
             return
         }
-        val connection = WifiCameraConnection(requireContext(), object : WifiCameraConnection.Listener {
-            override fun onNetworkReady(network: Network, properties: LinkProperties) {
-                soulearDiscoveryClient?.observeNetwork(network, properties)
-            }
-            override fun onNetworkLost(network: Network) {
-                soulearDiscoveryClient?.forgetNetwork(network)
-            }
-            override fun onStatus(message: String) { showToast(message) }
-            override fun onFailure() {
-                wifiAttemptPolicy.failed()
-                wifiConnection = null
-            }
-        })
-        wifiConnection = connection
-        connection.connect(profile)
+        service.connect(profile, wifiAttemptPolicy)
+    }
+
+    @RequiresApi(29)
+    private fun resumeWifiConnection() {
+        if (!isResumed || wifiService == null) return
+        wifiService?.attach(wifiObserver, wifiAttemptPolicy)
+        val automatic = !pendingManualWifiConnect
+        pendingManualWifiConnect = false
+        connectSavedWifiCamera(automatic)
     }
 
     private fun releaseWifiConnection() {
-        if (Build.VERSION.SDK_INT >= 29) {
-            wifiConnection?.network?.let { soulearDiscoveryClient?.forgetNetwork(it) }
-            wifiConnection?.close()
-            wifiConnection = null
-        }
+        if (Build.VERSION.SDK_INT >= 29) wifiService?.disconnect()
     }
 
     private fun startSoulearVideo(result: SoulearDiscoveryClient.Detection) {
@@ -1292,17 +1310,31 @@ class UsbCameraFragment : CameraFragment() {
             startSoulearDiscovery()
         }
         if (Build.VERSION.SDK_INT >= 29) {
-            wifiConnection?.replayNetwork()
-            connectSavedWifiCamera(automatic = true)
+            resumeWifiConnection()
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (Build.VERSION.SDK_INT >= 29) {
+            wifiServiceBound = requireContext().bindService(
+                Intent(requireContext(), WifiCameraConnectionService::class.java),
+                wifiServiceBinding, Context.BIND_AUTO_CREATE)
         }
     }
 
     override fun onStop() {
-        releaseWifiConnection()
+        if (Build.VERSION.SDK_INT >= 29) wifiService?.detach(wifiObserver)
+        if (wifiServiceBound) {
+            requireContext().unbindService(wifiServiceBinding)
+            wifiServiceBound = false
+        }
+        wifiService = null
         super.onStop()
     }
 
     override fun onPause() {
+        if (Build.VERSION.SDK_INT >= 29) wifiService?.detach(wifiObserver)
         liveShare?.pause()
         binding?.videoPreview?.stopPlayback()
         if (soulearRecorder != null && isRecording) {
@@ -1320,7 +1352,6 @@ class UsbCameraFragment : CameraFragment() {
     override fun onDestroyView() {
         liveShare?.destroy()
         liveShare = null
-        releaseWifiConnection()
         soulearDiscoveryClient?.close()
         soulearDiscoveryClient = null
         stopSoulearVideo(clearPreview = true)
