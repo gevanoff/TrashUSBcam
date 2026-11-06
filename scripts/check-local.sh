@@ -1,9 +1,44 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
+
+# Resolve both runtimes before running any installs or tests. Gradle's JDK 17
+# compiler toolchain does not by itself validate the Gradle runtime matrix.
+require_jdk() {
+  local variable="$1" expected="$2" home="${!1:-}" version actual
+  if [[ -z "$home" || ! -x "$home/bin/java" ]]; then
+    echo "Required $variable must point to a JDK $expected installation (bin/java missing)" >&2
+    return 1
+  fi
+  if ! version="$("$home/bin/java" -version 2>&1)"; then
+    echo "Cannot execute $variable/bin/java" >&2
+    return 1
+  fi
+  if [[ "$version" =~ \"([0-9]+)(\.|\"|\+) ]]; then
+    actual="${BASH_REMATCH[1]}"
+  else
+    echo "Could not parse Java version from $variable: $version" >&2
+    return 1
+  fi
+  if [[ "$actual" != "$expected" ]]; then
+    echo "$variable must use JDK $expected, got JDK $actual" >&2
+    return 1
+  fi
+  printf '%s: %s\n' "$variable" "${version%%$'\n'*}"
+}
+
 command -v node >/dev/null || { echo "Node.js 24 required" >&2; exit 127; }
-node --version
+node_version="$(node --version)"
+if [[ ! "$node_version" =~ ^v24(\.|$) ]]; then
+  echo "Node.js 24 required, got $node_version" >&2
+  exit 1
+fi
+require_jdk JDK17_HOME 17
+require_jdk JDK21_HOME 21
+printf 'Node.js: %s\n' "$node_version"
+
 node --test streaming/server.test.mjs
 node --check streaming/public/viewer.js
 npm ci --prefix streaming
@@ -13,6 +48,13 @@ else
   npx --prefix streaming playwright install chromium
 fi
 node streaming/browser-smoke.cjs
-./gradlew --version
-./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
-echo "TrashUSBcam streaming and Android checks passed"
+
+original_path="$PATH"
+for major in 17 21; do
+  variable="JDK${major}_HOME"
+  home="${!variable}"
+  echo "Android/Gradle validation with JDK $major"
+  JAVA_HOME="$home" PATH="$home/bin:$original_path" ./gradlew --version
+  JAVA_HOME="$home" PATH="$home/bin:$original_path" ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+done
+echo "TrashUSBcam streaming and Android JDK 17/21 checks passed"
