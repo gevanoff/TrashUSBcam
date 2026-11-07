@@ -27,12 +27,32 @@ cat > "$fixture/jdk21/bin/java" <<'MOCK'
 #!/usr/bin/env bash
 echo "openjdk version \"${MOCK_JDK21_VERSION:-21.0.9}\" 2026" >&2
 MOCK
+cat > "$fixture/jdk17/bin/javac" <<'MOCK'
+#!/usr/bin/env bash
+echo "javac ${MOCK_JAVAC17_VERSION:-17.0.17}"
+MOCK
+cat > "$fixture/jdk21/bin/javac" <<'MOCK'
+#!/usr/bin/env bash
+echo "javac ${MOCK_JAVAC21_VERSION:-21.0.9}"
+MOCK
 cat > "$fixture/gradlew" <<'MOCK'
 #!/usr/bin/env bash
-echo "gradle ${JAVA_HOME} $*" >> "$MOCK_LOG"
+# Simulate a user-level org.gradle.java.home override. An explicit -D wins.
+effective="${MOCK_GRADLE_CONFIG_JDK:-$JAVA_HOME}"
+rerun=0
+has_tasks=0
+for arg in "$@"; do
+  if [[ "$arg" == "-Dorg.gradle.java.home=$JAVA_HOME" ]]; then effective="$JAVA_HOME"; fi
+  if [[ "$arg" == '--rerun-tasks' ]]; then rerun=1; fi
+  if [[ "$arg" == 'testDebugUnitTest' ]]; then has_tasks=1; fi
+done
+echo "gradle ${JAVA_HOME} effective=${effective} rerun=${rerun} $*" >> "$MOCK_LOG"
+[[ "$effective" == "$JAVA_HOME" ]] || exit 50
+if [[ "$has_tasks" == 1 && "$rerun" != 1 ]]; then exit 51; fi
 if [[ "${MOCK_FAIL_GRADLE:-}" == 17 && "$JAVA_HOME" == *jdk17 ]]; then exit 42; fi
+if [[ "${MOCK_FAIL_GRADLE:-}" == 21 && "$JAVA_HOME" == *jdk21 ]]; then exit 43; fi
 MOCK
-chmod +x "$fixture/bin/"* "$fixture/jdk17/bin/java" "$fixture/jdk21/bin/java" "$fixture/gradlew"
+chmod +x "$fixture/bin/"* "$fixture/jdk17/bin/"* "$fixture/jdk21/bin/"* "$fixture/gradlew"
 export MOCK_LOG="$tmp/actions.log" JDK17_HOME="$fixture/jdk17" JDK21_HOME="$fixture/jdk21" PATH="$fixture/bin:$PATH"
 run_gate() { : > "$MOCK_LOG"; bash "$fixture/scripts/check-local.sh" > "$tmp/output" 2>&1; }
 fail() { echo "FAIL: $*" >&2; cat "$tmp/output" >&2; exit 1; }
@@ -40,9 +60,14 @@ assert_contains() { grep -Fq -- "$1" "$2" || fail "missing '$1' in $2"; }
 assert_absent() { if grep -Fq -- "$1" "$2"; then fail "unexpected '$1' in $2"; fi; }
 
 run_gate || fail "valid 17/21/Node24 matrix must pass"
-assert_contains "gradle $JDK17_HOME testDebugUnitTest" "$MOCK_LOG"
-assert_contains "gradle $JDK21_HOME testDebugUnitTest" "$MOCK_LOG"
+assert_contains "gradle $JDK17_HOME effective=$JDK17_HOME rerun=1" "$MOCK_LOG"
+assert_contains "gradle $JDK21_HOME effective=$JDK21_HOME rerun=1" "$MOCK_LOG"
 assert_contains 'node streaming/browser-smoke.cjs' "$MOCK_LOG"
+
+export MOCK_GRADLE_CONFIG_JDK="$JDK17_HOME"
+run_gate || fail 'explicit Gradle property must override host JDK17 configuration'
+assert_contains "gradle $JDK21_HOME effective=$JDK21_HOME rerun=1" "$MOCK_LOG"
+unset MOCK_GRADLE_CONFIG_JDK
 
 export MOCK_NODE_VERSION=v22.4.1
 if run_gate; then fail 'Node 22 must be rejected'; fi
@@ -62,9 +87,26 @@ assert_contains 'JDK21_HOME must use JDK 21' "$tmp/output"
 [[ ! -s "$MOCK_LOG" ]] || fail 'wrong JDK must fail before side effects'
 unset MOCK_JDK21_VERSION
 
+mv "$JDK21_HOME/bin/javac" "$tmp/saved-javac"
+if run_gate; then fail 'Java-only JRE must be rejected'; fi
+assert_contains 'bin/java and bin/javac required' "$tmp/output"
+[[ ! -s "$MOCK_LOG" ]] || fail 'java-only runtime must fail before side effects'
+mv "$tmp/saved-javac" "$JDK21_HOME/bin/javac"
+
+export MOCK_JAVAC21_VERSION=17.0.17
+if run_gate; then fail 'mismatched compiler version must be rejected'; fi
+assert_contains 'JDK21_HOME must use javac 21' "$tmp/output"
+[[ ! -s "$MOCK_LOG" ]] || fail 'wrong compiler must fail before side effects'
+unset MOCK_JAVAC21_VERSION
+
 export MOCK_FAIL_GRADLE=17
 if run_gate; then fail 'Gradle failure must fail closed'; fi
 assert_absent "gradle $JDK21_HOME" "$MOCK_LOG"
 unset MOCK_FAIL_GRADLE
 
-echo 'check-local offline matrix regressions passed (5 cases)'
+export MOCK_FAIL_GRADLE=21
+if run_gate; then fail 'JDK21 Gradle failure must fail closed'; fi
+assert_contains "gradle $JDK17_HOME effective=$JDK17_HOME rerun=1" "$MOCK_LOG"
+unset MOCK_FAIL_GRADLE
+
+echo 'check-local offline matrix regressions passed (9 cases)'
