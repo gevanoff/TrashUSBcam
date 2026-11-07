@@ -40,7 +40,7 @@ require_jdk() {
     echo "$variable must use javac $expected, got javac $compiler_major" >&2
     return 1
   fi
-  printf '%s: %s; %s\n' "$variable" "${version%%
+  printf '%s: java %s; javac %s\n' "$variable" "$actual" "$compiler_major"
 }
 
 command -v node >/dev/null || { echo "Node.js 24 required" >&2; exit 127; }
@@ -71,37 +71,5 @@ for major in 17 21; do
   # Override user Gradle daemon JVM settings and rerun all tasks for each pass.
   JAVA_HOME="$home" PATH="$home/bin:$original_path" ./gradlew "-Dorg.gradle.java.home=$home" --version
   JAVA_HOME="$home" PATH="$home/bin:$original_path" ./gradlew "-Dorg.gradle.java.home=$home" --rerun-tasks testDebugUnitTest lintDebug assembleDebug --stacktrace
-done
-echo "TrashUSBcam streaming and Android JDK 17/21 checks passed"
-\n'*}" "$compiler_version"
-}
-
-command -v node >/dev/null || { echo "Node.js 24 required" >&2; exit 127; }
-node_version="$(node --version)"
-if [[ ! "$node_version" =~ ^v24(\.|$) ]]; then
-  echo "Node.js 24 required, got $node_version" >&2
-  exit 1
-fi
-require_jdk JDK17_HOME 17
-require_jdk JDK21_HOME 21
-printf 'Node.js: %s\n' "$node_version"
-
-node --test streaming/server.test.mjs
-node --check streaming/public/viewer.js
-npm ci --prefix streaming
-if [[ "${INSTALL_PLAYWRIGHT_OS_DEPS:-0}" == 1 ]]; then
-  npx --prefix streaming playwright install --with-deps chromium
-else
-  npx --prefix streaming playwright install chromium
-fi
-node streaming/browser-smoke.cjs
-
-original_path="$PATH"
-for major in 17 21; do
-  variable="JDK${major}_HOME"
-  home="${!variable}"
-  echo "Android/Gradle validation with JDK $major"
-  JAVA_HOME="$home" PATH="$home/bin:$original_path" ./gradlew --version
-  JAVA_HOME="$home" PATH="$home/bin:$original_path" ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
 done
 echo "TrashUSBcam streaming and Android JDK 17/21 checks passed"
