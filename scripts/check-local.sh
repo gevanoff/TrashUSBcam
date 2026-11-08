@@ -72,6 +72,8 @@ if [[ ! "$node_version" =~ ^v24(\.|$) ]]; then
 fi
 require_jdk JDK17_HOME 17
 require_jdk JDK21_HOME 21
+# Gradle must see both compiler toolchains even when JAVA_HOME switches to 21.
+export JDK17_HOME JDK21_HOME
 printf 'Node.js: %s\n' "$node_version"
 
 node --test streaming/server.test.mjs
@@ -91,6 +93,6 @@ for major in 17 21; do
   echo "Android/Gradle validation with JDK $major"
   # Override user Gradle daemon JVM settings and rerun all tasks for each pass.
   JAVA_HOME="$home" PATH="$home/bin:$original_path" ./gradlew "-Dorg.gradle.java.home=$home" --version
-  JAVA_HOME="$home" PATH="$home/bin:$original_path" ./gradlew "-Dorg.gradle.java.home=$home" --rerun-tasks testDebugUnitTest lintDebug assembleDebug --stacktrace
+  JAVA_HOME="$home" PATH="$home/bin:$original_path" ./gradlew "-Dorg.gradle.java.home=$home" "-Porg.gradle.java.installations.fromEnv=JDK17_HOME,JDK21_HOME" --rerun-tasks testDebugUnitTest lintDebug assembleDebug --stacktrace
 done
 echo "TrashUSBcam streaming and Android JDK 17/21 checks passed"
