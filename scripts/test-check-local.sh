@@ -29,11 +29,15 @@ echo "openjdk version \"${MOCK_JDK21_VERSION:-21.0.9}\" 2026" >&2
 MOCK
 cat > "$fixture/jdk17/bin/javac" <<'MOCK'
 #!/usr/bin/env bash
+if [[ -n "${MOCK_JAVAC17_BANNER:-}" ]]; then printf '%s\n' "$MOCK_JAVAC17_BANNER"; fi
 echo "javac ${MOCK_JAVAC17_VERSION:-17.0.17}"
+if [[ -n "${MOCK_JAVAC17_EXTRA_VERSION:-}" ]]; then echo "javac $MOCK_JAVAC17_EXTRA_VERSION"; fi
 MOCK
 cat > "$fixture/jdk21/bin/javac" <<'MOCK'
 #!/usr/bin/env bash
+if [[ -n "${MOCK_JAVAC21_BANNER:-}" ]]; then printf '%s\n' "$MOCK_JAVAC21_BANNER"; fi
 echo "javac ${MOCK_JAVAC21_VERSION:-21.0.9}"
+if [[ -n "${MOCK_JAVAC21_EXTRA_VERSION:-}" ]]; then echo "javac $MOCK_JAVAC21_EXTRA_VERSION"; fi
 MOCK
 cat > "$fixture/gradlew" <<'MOCK'
 #!/usr/bin/env bash
@@ -99,6 +103,26 @@ assert_contains 'JDK21_HOME must use javac 21' "$tmp/output"
 [[ ! -s "$MOCK_LOG" ]] || fail 'wrong compiler must fail before side effects'
 unset MOCK_JAVAC21_VERSION
 
+# Compiler banners emitted by _JAVA_OPTIONS / JAVA_TOOL_OPTIONS are benign.
+export MOCK_JAVAC17_BANNER="Picked up _JAVA_OPTIONS: -Dfile.encoding=UTF-8"
+export MOCK_JAVAC21_BANNER="Picked up JAVA_TOOL_OPTIONS: -Duser.timezone=UTC"
+run_gate || fail 'javac banners must not reject valid JDKs'
+assert_contains "gradle $JDK17_HOME effective=$JDK17_HOME rerun=1" "$MOCK_LOG"
+assert_contains "gradle $JDK21_HOME effective=$JDK21_HOME rerun=1" "$MOCK_LOG"
+unset MOCK_JAVAC17_BANNER MOCK_JAVAC21_BANNER
+
+export MOCK_JAVAC21_EXTRA_VERSION=17.0.17
+if run_gate; then fail 'ambiguous duplicate javac version lines must be rejected'; fi
+assert_contains 'Ambiguous javac version output from JDK21_HOME' "$tmp/output"
+[[ ! -s "$MOCK_LOG" ]] || fail 'ambiguous compiler version must fail before side effects'
+unset MOCK_JAVAC21_EXTRA_VERSION
+
+export MOCK_JAVAC21_VERSION=not-a-version
+if run_gate; then fail 'unparseable javac output must be rejected'; fi
+assert_contains 'Could not parse javac version from JDK21_HOME' "$tmp/output"
+[[ ! -s "$MOCK_LOG" ]] || fail 'unparseable compiler version must fail before side effects'
+unset MOCK_JAVAC21_VERSION
+
 export MOCK_FAIL_GRADLE=17
 if run_gate; then fail 'Gradle failure must fail closed'; fi
 assert_absent "gradle $JDK21_HOME" "$MOCK_LOG"
@@ -109,4 +133,4 @@ if run_gate; then fail 'JDK21 Gradle failure must fail closed'; fi
 assert_contains "gradle $JDK17_HOME effective=$JDK17_HOME rerun=1" "$MOCK_LOG"
 unset MOCK_FAIL_GRADLE
 
-echo 'check-local offline matrix regressions passed (9 cases)'
+echo 'check-local offline matrix regressions passed (12 cases)'
