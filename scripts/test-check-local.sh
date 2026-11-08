@@ -21,11 +21,15 @@ echo "npx $*" >> "$MOCK_LOG"
 MOCK
 cat > "$fixture/jdk17/bin/java" <<'MOCK'
 #!/usr/bin/env bash
+if [[ -n "${MOCK_JDK17_BANNER:-}" ]]; then printf '%s\n' "$MOCK_JDK17_BANNER" >&2; fi
 echo "openjdk version \"${MOCK_JDK17_VERSION:-17.0.17}\" 2026" >&2
+if [[ -n "${MOCK_JDK17_EXTRA_VERSION:-}" ]]; then echo "java version \"$MOCK_JDK17_EXTRA_VERSION\"" >&2; fi
 MOCK
 cat > "$fixture/jdk21/bin/java" <<'MOCK'
 #!/usr/bin/env bash
+if [[ -n "${MOCK_JDK21_BANNER:-}" ]]; then printf '%s\n' "$MOCK_JDK21_BANNER" >&2; fi
 echo "openjdk version \"${MOCK_JDK21_VERSION:-21.0.9}\" 2026" >&2
+if [[ -n "${MOCK_JDK21_EXTRA_VERSION:-}" ]]; then echo "java version \"$MOCK_JDK21_EXTRA_VERSION\"" >&2; fi
 MOCK
 cat > "$fixture/jdk17/bin/javac" <<'MOCK'
 #!/usr/bin/env bash
@@ -91,6 +95,26 @@ assert_contains 'JDK21_HOME must use JDK 21' "$tmp/output"
 [[ ! -s "$MOCK_LOG" ]] || fail 'wrong JDK must fail before side effects'
 unset MOCK_JDK21_VERSION
 
+# JVM option banners can contain another quoted Java major.
+export MOCK_JDK17_BANNER='Picked up JAVA_TOOL_OPTIONS: -Dprobe="21"'
+export MOCK_JDK21_BANNER='Picked up _JAVA_OPTIONS: -Dprobe="17"'
+run_gate || fail 'quoted JVM option banners must not change actual JDK version'
+assert_contains "gradle $JDK17_HOME effective=$JDK17_HOME rerun=1" "$MOCK_LOG"
+assert_contains "gradle $JDK21_HOME effective=$JDK21_HOME rerun=1" "$MOCK_LOG"
+unset MOCK_JDK17_BANNER MOCK_JDK21_BANNER
+
+export MOCK_JDK21_EXTRA_VERSION=17.0.17
+if run_gate; then fail 'ambiguous duplicate Java runtime version lines must be rejected'; fi
+assert_contains "Ambiguous Java version output from JDK21_HOME" "$tmp/output"
+[[ ! -s "$MOCK_LOG" ]] || fail 'ambiguous Java version must fail before side effects'
+unset MOCK_JDK21_EXTRA_VERSION
+
+export MOCK_JDK21_VERSION=not-a-version
+if run_gate; then fail 'unparseable Java runtime version must be rejected'; fi
+assert_contains "Could not parse Java version from JDK21_HOME" "$tmp/output"
+[[ ! -s "$MOCK_LOG" ]] || fail 'unparseable Java version must fail before side effects'
+unset MOCK_JDK21_VERSION
+
 mv "$JDK21_HOME/bin/javac" "$tmp/saved-javac"
 if run_gate; then fail 'Java-only JRE must be rejected'; fi
 assert_contains 'bin/java and bin/javac required' "$tmp/output"
@@ -133,4 +157,4 @@ if run_gate; then fail 'JDK21 Gradle failure must fail closed'; fi
 assert_contains "gradle $JDK17_HOME effective=$JDK17_HOME rerun=1" "$MOCK_LOG"
 unset MOCK_FAIL_GRADLE
 
-echo 'check-local offline matrix regressions passed (12 cases)'
+echo 'check-local offline matrix regressions passed (15 cases)'
