@@ -49,14 +49,18 @@ cat > "$fixture/gradlew" <<'MOCK'
 effective="${MOCK_GRADLE_CONFIG_JDK:-$JAVA_HOME}"
 rerun=0
 has_tasks=0
+has_toolchains=0
 for arg in "$@"; do
   if [[ "$arg" == "-Dorg.gradle.java.home=$JAVA_HOME" ]]; then effective="$JAVA_HOME"; fi
   if [[ "$arg" == '--rerun-tasks' ]]; then rerun=1; fi
   if [[ "$arg" == 'testDebugUnitTest' ]]; then has_tasks=1; fi
+  if [[ "$arg" == '-Porg.gradle.java.installations.fromEnv=JDK17_HOME,JDK21_HOME' ]]; then has_toolchains=1; fi
 done
 echo "gradle ${JAVA_HOME} effective=${effective} rerun=${rerun} $*" >> "$MOCK_LOG"
 [[ "$effective" == "$JAVA_HOME" ]] || exit 50
 if [[ "$has_tasks" == 1 && "$rerun" != 1 ]]; then exit 51; fi
+# A JDK21 Gradle runtime must still discover the separately supplied JDK17 toolchain.
+if [[ "$has_tasks" == 1 && "$has_toolchains" != 1 ]]; then exit 52; fi
 if [[ "${MOCK_FAIL_GRADLE:-}" == 17 && "$JAVA_HOME" == *jdk17 ]]; then exit 42; fi
 if [[ "${MOCK_FAIL_GRADLE:-}" == 21 && "$JAVA_HOME" == *jdk21 ]]; then exit 43; fi
 MOCK
@@ -70,6 +74,7 @@ assert_absent() { if grep -Fq -- "$1" "$2"; then fail "unexpected '$1' in $2"; f
 run_gate || fail "valid 17/21/Node24 matrix must pass"
 assert_contains "gradle $JDK17_HOME effective=$JDK17_HOME rerun=1" "$MOCK_LOG"
 assert_contains "gradle $JDK21_HOME effective=$JDK21_HOME rerun=1" "$MOCK_LOG"
+assert_contains '-Porg.gradle.java.installations.fromEnv=JDK17_HOME,JDK21_HOME' "$MOCK_LOG"
 assert_contains 'node streaming/browser-smoke.cjs' "$MOCK_LOG"
 
 export MOCK_GRADLE_CONFIG_JDK="$JDK17_HOME"
