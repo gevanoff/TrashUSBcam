@@ -3,7 +3,7 @@
 ## Shared build policy
 
 - Android Gradle Plugin **9.3.2** and Gradle **9.6.0**.
-- **JDK 21** is the normal Gradle runtime. CI validates Gradle on JDK 17 and 21.
+- **JDK 21** is the normal Gradle runtime. The local release gate validates Gradle on **both JDK 17 and 21**.
 - Compilation and JVM unit tests use an explicit **JDK 17 toolchain**. Java/Kotlin bytecode targets remain **17**.
 - The pinned Foojay toolchain resolver downloads a suitable JDK 17 on the first build if none is installed. Set up JDK 17 in advance for offline builds.
 - Use the committed wrapper, which verifies the Gradle distribution with its published SHA-256 checksum.
@@ -33,7 +33,7 @@ On Linux/macOS, set `JAVA_HOME` to a JDK 21 installation, then run:
 
 The APK is under `app/build/outputs/apk/debug/` relative to the Gradle project. Lint reports are under `app/build/reports/`; JVM test reports are under `app/build/reports/tests/`.
 
-CI uses the same wrapper and validation tasks, with a preinstalled JDK 17 compiler and a matrix of Gradle runtimes. Gradle's dedicated wrapper-validation action verifies the committed wrapper JAR before it runs; the wrapper's pinned distribution checksum verifies the downloaded Gradle distribution.
+The required local validation gate is `bash scripts/check-local.sh` with Node.js 24 and explicit `JDK17_HOME` / `JDK21_HOME`. It runs the full Android validation tasks once under each Gradle runtime and keeps reports locally. `bash scripts/test-check-local.sh` tests the gate itself offline. Hosted GitHub Actions and their wrapper-validation action have been retired; the wrapper's pinned distribution checksum still verifies the downloaded Gradle distribution. Verify the committed wrapper JAR from a trusted source before relying on it.
 
 To investigate deprecation warnings, add `--warning-mode all` to the validation command. Resolve the reported source before upgrading to another major Gradle version.
 

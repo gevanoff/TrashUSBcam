@@ -4,7 +4,7 @@ One Android publisher → one browser viewer, video only. The Android Share menu
 
 ## Run the service
 
-Requires Node 22+ (CI uses 24). There are no runtime npm dependencies. Playwright is a pinned development dependency for the browser media smoke test. Generate two different random secrets, one for publisher authorization and one shared with coturn:
+The service supports Node 22+, but the repository's full **local acceptance gate requires Node 24**; no hosted CI runs the matrix. There are no runtime npm dependencies. Playwright is a pinned development dependency for the browser media smoke test. Generate two different random secrets, one for publisher authorization and one shared with coturn:
 
 ```bash
 openssl rand -hex 32
@@ -75,7 +75,7 @@ node streaming/browser-smoke.cjs
 ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
 ```
 
-Tests cover publisher authentication, a single viewer claim, role separation, offer/answer exchange, pause, revocation, expiry, abandoned sessions, request size limits, TURN credential issuance, and video color conversion. The Chromium smoke test connects a synthetic video publisher to the actual viewer, checks decoded colors, rejects a second viewer, and verifies pause/resume and revocation. CI publishes the APK and Android reports.
+Tests cover publisher authentication, a single viewer claim, role separation, offer/answer exchange, pause, revocation, expiry, abandoned sessions, request size limits, TURN credential issuance, and video color conversion. The Chromium smoke test connects a synthetic video publisher to the actual viewer, checks decoded colors, rejects a second viewer, and verifies pause/resume and revocation. No hosted CI publishes APKs or reports. The local acceptance gate (`bash scripts/check-local.sh`) uses Node 24, runs streaming tests and browser smoke, then runs Android Gradle checks under JDK 17 and JDK 21. Results and APKs remain in local build directories. Run `bash scripts/test-check-local.sh` first to verify the gate's fail-closed behavior.
 
 Physical acceptance testing remains required:
 
