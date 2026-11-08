@@ -30,9 +30,20 @@ require_jdk() {
     echo "Cannot execute $variable/bin/javac" >&2
     return 1
   fi
-  if [[ "$compiler_version" =~ ^javac[[:space:]]+([0-9]+)([.+[:space:]]|$) ]]; then
-    compiler_major="${BASH_REMATCH[1]}"
-  else
+  # Java option banners can precede the actual javac version line.
+  # Match a complete line and reject ambiguous duplicate version lines.
+  compiler_major=""
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^javac[[:space:]]+([0-9]+)([.+[:space:]]|$) ]]; then
+      if [[ -n "$compiler_major" ]]; then
+        echo "Ambiguous javac version output from $variable: $compiler_version" >&2
+        return 1
+      fi
+      compiler_major="${BASH_REMATCH[1]}"
+    fi
+  done <<< "$compiler_version"
+  if [[ -z "$compiler_major" ]]; then
     echo "Could not parse javac version from $variable: $compiler_version" >&2
     return 1
   fi
