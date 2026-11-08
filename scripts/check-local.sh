@@ -16,9 +16,20 @@ require_jdk() {
     echo "Cannot execute $variable/bin/java" >&2
     return 1
   fi
-  if [[ "$version" =~ \"([0-9]+)(\.|\"|\+) ]]; then
-    actual="${BASH_REMATCH[1]}"
-  else
+  # Java option banners can contain unrelated quoted numbers before the
+  # actual java -version line. Only one anchored version line is accepted.
+  actual=""
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^(openjdk|java)[[:space:]]+version[[:space:]]+\"([0-9]+)([.]|\"|[+]) ]]; then
+      if [[ -n "$actual" ]]; then
+        echo "Ambiguous Java version output from $variable: $version" >&2
+        return 1
+      fi
+      actual="${BASH_REMATCH[2]}"
+    fi
+  done <<< "$version"
+  if [[ -z "$actual" ]]; then
     echo "Could not parse Java version from $variable: $version" >&2
     return 1
   fi
@@ -33,7 +44,6 @@ require_jdk() {
   # Java option banners can precede the actual javac version line.
   # Match a complete line and reject ambiguous duplicate version lines.
   compiler_major=""
-  local line
   while IFS= read -r line; do
     if [[ "$line" =~ ^javac[[:space:]]+([0-9]+)([.+[:space:]]|$) ]]; then
       if [[ -n "$compiler_major" ]]; then
