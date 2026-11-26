@@ -8,7 +8,7 @@ TrashUSBcam uses the [AndroidUSBCamera (AUSBC)](https://github.com/jiangdongguo/
 
 ## Features
 
-- Automatically detects and connects to any UVC-class USB camera when plugged in via OTG
+- Android offers to open TrashUSBcam for UVC-class USB cameras plugged in via OTG, not for unrelated devices such as security keys. Inside the app, the camera connects after USB permission is granted.
 - Automatically detects a compatible Soulear/i4season camera at `192.168.1.1` and binds its UDP sockets to the camera's Wi-Fi network, even while cellular data is enabled
 - Collects compatible Wi-Fi discovery results and offers a camera picker when more than one candidate is available
 - Reassembles and displays the Soulear camera's chunked MJPEG stream
